@@ -27,6 +27,16 @@ text, powered by FFmpeg via
 - **Streaming iteration** — lazy `FrameIterator` (pull-based) and
   `for_each_frame` (push-based) without buffering entire frame sets
 - **Validation** — inspect media files for structural issues before extraction
+- **Chapter support** — extract chapter metadata (titles, timestamps) from
+  containers
+- **Frame metadata** — per-frame decode info (PTS, keyframe flag, picture type)
+  via `frame_with_info` / `frames_with_info`
+- **Segmented extraction** — extract frames from multiple disjoint time ranges
+  in a single call with `FrameRange::Segments`
+- **Stream probing** — lightweight `MediaProbe` for quick metadata inspection
+  without keeping the demuxer open
+- **Thumbnail helpers** — single-frame thumbnails, contact-sheet grids, and
+  variance-based "smart" thumbnail selection
 - **Efficient seeking** — seeks to the nearest keyframe, then decodes forward
 - **Zero-copy in-memory audio** — uses FFmpeg's dynamic buffer I/O
 
@@ -302,6 +312,69 @@ if report.is_valid() {
 }
 ```
 
+### Probe Media Files
+
+```rust
+use unbundle::MediaProbe;
+
+// Quick metadata inspection without keeping the file open
+let metadata = MediaProbe::probe("input.mp4")?;
+println!("Duration: {:?}", metadata.duration);
+
+// Probe multiple files at once
+let results = MediaProbe::probe_many(&["video1.mp4", "video2.mkv"]);
+```
+
+### Chapter Metadata
+
+```rust
+use unbundle::MediaUnbundler;
+
+let unbundler = MediaUnbundler::open("input.mkv")?;
+let metadata = unbundler.metadata();
+
+if let Some(chapters) = &metadata.chapters {
+    for chapter in chapters {
+        println!("[{:?} → {:?}] {}",
+            chapter.start, chapter.end,
+            chapter.title.as_deref().unwrap_or("Untitled"));
+    }
+}
+```
+
+### Frame Metadata
+
+```rust
+use unbundle::MediaUnbundler;
+
+let mut unbundler = MediaUnbundler::open("input.mp4")?;
+
+// Get a frame with its decode metadata
+let (image, info) = unbundler.video().frame_with_info(0)?;
+println!("Frame {}: keyframe={}, type={:?}, pts={:?}",
+    info.frame_number, info.is_keyframe, info.frame_type, info.pts);
+```
+
+### Thumbnail Generation
+
+```rust
+use unbundle::{MediaUnbundler, ThumbnailConfig, ThumbnailGenerator};
+
+let mut unbundler = MediaUnbundler::open("input.mp4")?;
+
+// Single thumbnail at a timestamp
+use std::time::Duration;
+let thumb = ThumbnailGenerator::at_timestamp(&mut unbundler, Duration::from_secs(5), 320)?;
+
+// Contact-sheet grid
+let config = ThumbnailConfig::new(4, 3); // 4 columns × 3 rows
+let grid = ThumbnailGenerator::grid(&mut unbundler, &config)?;
+grid.save("contact_sheet.png")?;
+
+// Smart thumbnail (picks frame with highest visual variance)
+let smart = ThumbnailGenerator::smart(&mut unbundler, 10, 320)?;
+```
+
 ## API Documentation
 
 See the [API docs](https://docs.rs/unbundle) for complete documentation.
@@ -325,7 +398,17 @@ See the [API docs](https://docs.rs/unbundle) for complete documentation.
 | `VideoMetadata` | Video stream metadata (dimensions, frame rate, codec) |
 | `AudioMetadata` | Audio stream metadata (sample rate, channels, codec) |
 | `SubtitleMetadata` | Subtitle stream metadata (codec, language) |
+| `ProgressCallback` | Trait for receiving progress updates |
+| `ProgressInfo` | Progress event data (current, total, percentage, ETA) |
+| `CancellationToken` | Cooperative cancellation via `Arc<AtomicBool>` |
+| `OperationType` | Identifies the operation being tracked |
 | `UnbundleError` | Error type with rich context |
+| `FrameInfo` | Per-frame decode metadata (PTS, keyframe flag, picture type) |
+| `FrameType` | Picture type enum (I, P, B, etc.) |
+| `ChapterMetadata` | Chapter information (title, start/end times) |
+| `MediaProbe` | Lightweight stateless media file probing |
+| `ThumbnailGenerator` | Thumbnail generation helpers (single, grid, smart) |
+| `ThumbnailConfig` | Grid thumbnail configuration (columns, rows, width) |
 
 ### Feature-Gated Types
 
@@ -342,11 +425,19 @@ See the [API docs](https://docs.rs/unbundle) for complete documentation.
 
 See the [`examples/`](examples/) directory:
 
-- **`extract_frames`** — Extract video frames by number, timestamp, and interval
-- **`extract_audio`** — Extract the complete audio track
-- **`extract_audio_segment`** — Extract a specific time range as MP3
-- **`thumbnail_grid`** — Create a thumbnail grid from evenly-spaced frames
-- **`metadata`** — Display all media metadata
+| Example | Description |
+|---------|-------------|
+| `extract_frames` | Extract frames by number, timestamp, range, interval |
+| `extract_audio` | Extract the complete audio track |
+| `extract_audio_segment` | Extract a specific time range as MP3 |
+| `thumbnail_grid` | Create a thumbnail grid from evenly-spaced frames |
+| `metadata` | Display all media metadata |
+| `frame_iterator` | Lazy frame iteration with early exit |
+| `pixel_formats` | Demonstrate RGB8/RGBA8/GRAY8 output |
+| `progress` | Progress callbacks and cancellation |
+| `subtitles` | Extract subtitles as SRT/WebVTT/raw text |
+| `remux` | Lossless container format conversion |
+| `validate` | Media file validation report |
 
 Run an example:
 
@@ -388,13 +479,36 @@ tests\fixtures\generate_fixtures.bat
 Then run tests:
 
 ```bash
-cargo test
+cargo test --all-features
 ```
 
-Run with all features:
+### Test Suites
+
+| Test file | Coverage |
+|-----------|----------|
+| `video_extraction` | Single frames, ranges, intervals, timestamps, specific lists, pixel formats, resolution scaling |
+| `audio_extraction` | WAV/MP3/FLAC/AAC extraction, ranges, file output, multi-track |
+| `subtitle_extraction` | Subtitle decoding, SRT/WebVTT export, multi-track |
+| `metadata` | Container metadata, video/audio/subtitle stream properties |
+| `config` | ExtractionConfig builder, pixel formats, resolution, cancellation |
+| `progress` | ProgressCallback, ProgressInfo fields, CancellationToken |
+| `error_handling` | Error variants, context, invalid inputs, missing streams |
+| `frame_iterator` | FrameIterator, lazy iteration, early exit |
+| `conversion` | Remuxer, stream exclusion, lossless format conversion |
+| `validation` | ValidationReport, warnings, errors, valid files |
+| `scene_detection` | Scene change detection, threshold configuration |
+| `chapters` | Chapter metadata extraction, titles, timestamps, ordering |
+| `frame_metadata` | FrameInfo, FrameType, keyframe detection, PTS values |
+| `segmented_extraction` | FrameRange::Segments, multiple disjoint time ranges |
+| `probing` | MediaProbe, probe/probe_many, error handling |
+| `thumbnail` | ThumbnailGenerator, grid, smart selection, aspect ratio |
+
+## Benchmarks
+
+Criterion benchmarks live in `benches/`:
 
 ```bash
-cargo test --all-features
+cargo bench --all-features
 ```
 
 ## License

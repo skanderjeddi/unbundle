@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use ffmpeg_next::{
     codec::context::Context as CodecContext,
-    filter,
+    filter::Graph as FilterGraph,
     frame::Video as VideoFrame,
 };
 
@@ -117,7 +117,7 @@ pub(crate) fn detect_scenes_impl(
     let pix_fmt = actual_pix_fmt.unwrap_or(decoder.format() as i32);
 
     // Build the filter graph: buffer → scdet → buffersink
-    let mut graph = filter::Graph::new();
+    let mut graph = FilterGraph::new();
 
     let buffer_args = format!(
         "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect=1/1",
@@ -129,13 +129,13 @@ pub(crate) fn detect_scenes_impl(
     );
 
     graph
-        .add(&filter::find("buffer").ok_or_else(|| {
+        .add(&ffmpeg_next::filter::find("buffer").ok_or_else(|| {
             UnbundleError::VideoDecodeError("FFmpeg 'buffer' filter not found".to_string())
         })?, "in", &buffer_args)
         .map_err(|e| UnbundleError::VideoDecodeError(format!("Failed to add buffer filter: {e}")))?;
 
     graph
-        .add(&filter::find("buffersink").ok_or_else(|| {
+        .add(&ffmpeg_next::filter::find("buffersink").ok_or_else(|| {
             UnbundleError::VideoDecodeError("FFmpeg 'buffersink' filter not found".to_string())
         })?, "out", "")
         .map_err(|e| {
@@ -157,7 +157,7 @@ pub(crate) fn detect_scenes_impl(
 
     // Helper: feed a decoded frame through the filter graph and collect scenes.
     let mut feed_and_collect =
-        |graph: &mut filter::Graph,
+        |graph: &mut FilterGraph,
          frame: &VideoFrame,
          scenes: &mut Vec<SceneChange>|
          -> Result<(), UnbundleError> {

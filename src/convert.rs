@@ -16,7 +16,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ffmpeg_next::{codec::Id, format, media::Type};
+use ffmpeg_next::{codec::Id, media::Type};
 
 use crate::error::UnbundleError;
 
@@ -119,12 +119,12 @@ impl Remuxer {
     /// or [`UnbundleError::FfmpegError`] if remuxing fails.
     pub fn run(&self) -> Result<(), UnbundleError> {
         let mut input_context =
-            format::input(&self.input_path).map_err(|e| UnbundleError::FileOpen {
+            ffmpeg_next::format::input(&self.input_path).map_err(|e| UnbundleError::FileOpen {
                 path: self.input_path.clone(),
                 reason: e.to_string(),
             })?;
 
-        let mut output_context = format::output(&self.output_path).map_err(|e| {
+        let mut output_context = ffmpeg_next::format::output(&self.output_path).map_err(|e| {
             UnbundleError::FileOpen {
                 path: self.output_path.clone(),
                 reason: format!("Failed to create output: {e}"),

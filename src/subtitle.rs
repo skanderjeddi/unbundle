@@ -17,7 +17,7 @@
 //! # Ok::<(), unbundle::UnbundleError>(())
 //! ```
 
-use std::fmt;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
@@ -56,8 +56,8 @@ pub enum SubtitleFormat {
     Raw,
 }
 
-impl fmt::Display for SubtitleFormat {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for SubtitleFormat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             SubtitleFormat::Srt => write!(f, "SRT"),
             SubtitleFormat::WebVtt => write!(f, "WebVTT"),

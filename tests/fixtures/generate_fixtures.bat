@@ -84,6 +84,42 @@ ffmpeg -y ^
 del "%FIXTURES_DIR%temp_subs.srt"
 echo   Created sample_with_subtitles.mkv
 
+REM 7. sample_with_chapters.mkv — MKV with chapter markers
+REM    First create a temporary chapters metadata file, then mux it.
+(
+echo ;FFMETADATA1
+echo.
+echo [CHAPTER]
+echo TIMEBASE=1/1000
+echo START=0
+echo END=2000
+echo title=Introduction
+echo.
+echo [CHAPTER]
+echo TIMEBASE=1/1000
+echo START=2000
+echo END=4000
+echo title=Main Content
+echo.
+echo [CHAPTER]
+echo TIMEBASE=1/1000
+echo START=4000
+echo END=5000
+echo title=Conclusion
+) > "%FIXTURES_DIR%temp_chapters.txt"
+
+ffmpeg -y ^
+    -f lavfi -i "testsrc=duration=5:size=320x240:rate=25" ^
+    -f lavfi -i "sine=frequency=500:duration=5:sample_rate=44100" ^
+    -i "%FIXTURES_DIR%temp_chapters.txt" ^
+    -map_metadata 1 ^
+    -c:v libx264 -preset ultrafast -pix_fmt yuv420p ^
+    -c:a aac -b:a 64k -ac 2 ^
+    -shortest ^
+    "%FIXTURES_DIR%sample_with_chapters.mkv"
+del "%FIXTURES_DIR%temp_chapters.txt"
+echo   Created sample_with_chapters.mkv
+
 echo.
 echo All fixtures generated successfully.
 echo You can now run: cargo test

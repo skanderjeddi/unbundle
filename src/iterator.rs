@@ -31,7 +31,7 @@ use ffmpeg_next::{
     Rational,
     software::scaling::{Context as ScalingContext, Flags as ScalingFlags},
 };
-use image::DynamicImage;
+use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 
 use crate::config::{FrameOutputConfig, OutputPixelFormat};
 use crate::error::UnbundleError;
@@ -148,7 +148,7 @@ impl<'a> FrameIterator<'a> {
             OutputPixelFormat::Rgb8 => {
                 let buf =
                     crate::utilities::frame_to_buffer(&self.scaled_frame, width, height, 3);
-                let img = image::RgbImage::from_raw(width, height, buf).ok_or_else(|| {
+                let img = RgbImage::from_raw(width, height, buf).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct RGB image from decoded frame data".to_string(),
                     )
@@ -158,7 +158,7 @@ impl<'a> FrameIterator<'a> {
             OutputPixelFormat::Rgba8 => {
                 let buf =
                     crate::utilities::frame_to_buffer(&self.scaled_frame, width, height, 4);
-                let img = image::RgbaImage::from_raw(width, height, buf).ok_or_else(|| {
+                let img = RgbaImage::from_raw(width, height, buf).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct RGBA image from decoded frame data".to_string(),
                     )
@@ -168,7 +168,7 @@ impl<'a> FrameIterator<'a> {
             OutputPixelFormat::Gray8 => {
                 let buf =
                     crate::utilities::frame_to_buffer(&self.scaled_frame, width, height, 1);
-                let img = image::GrayImage::from_raw(width, height, buf).ok_or_else(|| {
+                let img = GrayImage::from_raw(width, height, buf).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct grayscale image from decoded frame data".to_string(),
                     )

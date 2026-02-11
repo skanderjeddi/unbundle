@@ -8,7 +8,7 @@
 //! [`VideoExtractor::frames_parallel`](crate::VideoExtractor) — this module
 //! contains only the internal implementation.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use image::DynamicImage;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -92,7 +92,7 @@ fn split_into_runs(frame_numbers: &[u64], gap_threshold: u64) -> Vec<Vec<u64>> {
 
 /// Decode a chunk of frame numbers from a fresh file context.
 fn decode_chunk(
-    file_path: &std::path::Path,
+    file_path: &Path,
     frame_numbers: &[u64],
     config: &ExtractionConfig,
 ) -> Result<Vec<(u64, DynamicImage)>, UnbundleError> {

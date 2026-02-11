@@ -17,7 +17,7 @@ use ffmpeg_next::{codec::context::Context as CodecContext, format::context::Inpu
 use crate::{
     audio::AudioExtractor,
     error::UnbundleError,
-    metadata::{AudioMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata},
+    metadata::{AudioMetadata, ChapterMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata},
     subtitle::SubtitleExtractor,
     video::VideoExtractor,
 };
@@ -320,12 +320,41 @@ impl MediaUnbundler {
             Some(all_subtitle_metadata)
         };
 
+        // Extract chapter metadata.
+        let chapters = if input_context.nb_chapters() > 0 {
+            let mut chapter_list = Vec::with_capacity(input_context.nb_chapters() as usize);
+            for (index, chapter) in input_context.chapters().enumerate() {
+                let time_base = chapter.time_base();
+                let start_seconds = crate::utilities::pts_to_seconds(
+                    chapter.start(),
+                    time_base,
+                );
+                let end_seconds = crate::utilities::pts_to_seconds(
+                    chapter.end(),
+                    time_base,
+                );
+                let title = chapter.metadata().get("title").map(|s| s.to_string());
+
+                chapter_list.push(ChapterMetadata {
+                    title,
+                    start: Duration::from_secs_f64(start_seconds),
+                    end: Duration::from_secs_f64(end_seconds),
+                    index,
+                    id: chapter.id(),
+                });
+            }
+            Some(chapter_list)
+        } else {
+            None
+        };
+
         let metadata = MediaMetadata {
             video: video_metadata,
             audio: audio_metadata,
             audio_tracks,
             subtitle: subtitle_metadata,
             subtitle_tracks,
+            chapters,
             duration,
             format,
         };

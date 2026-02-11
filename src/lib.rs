@@ -1,11 +1,12 @@
 //! # unbundle
 //!
-//! Unbundle media files — extract still frames and audio from video files.
+//! Unbundle media files — extract still frames, audio tracks, and subtitles
+//! from video files.
 //!
 //! `unbundle` provides a clean, ergonomic API for extracting video frames as
-//! [`image::DynamicImage`] values and audio tracks as encoded byte vectors,
-//! powered by FFmpeg via the [`ffmpeg-next`](https://crates.io/crates/ffmpeg-next)
-//! crate.
+//! [`image::DynamicImage`] values, audio tracks as encoded byte vectors, and
+//! subtitle tracks as structured text, powered by FFmpeg via the
+//! [`ffmpeg-next`](https://crates.io/crates/ffmpeg-next) crate.
 //!
 //! ## Quick Start
 //!
@@ -46,19 +47,55 @@
 //! ).unwrap();
 //! ```
 //!
+//! ### Extract Subtitles
+//!
+//! ```no_run
+//! use unbundle::{MediaUnbundler, SubtitleFormat};
+//!
+//! let mut unbundler = MediaUnbundler::open("input.mkv").unwrap();
+//! unbundler.subtitle().save("output.srt", SubtitleFormat::Srt).unwrap();
+//! ```
+//!
 //! ## Features
 //!
-//! - **Frame extraction** by frame number, timestamp, range, interval, or
+//! - **Frame extraction** — by frame number, timestamp, range, interval, or
 //!   specific frame list
-//! - **Audio extraction** to WAV, MP3, FLAC, or AAC
-//! - **In-memory** or **file-based** audio output
-//! - **Rich metadata** for both video and audio streams
+//! - **Audio extraction** — to WAV, MP3, FLAC, or AAC (file or in-memory)
+//! - **Subtitle extraction** — decode text-based subtitles to SRT, WebVTT, or
+//!   raw text
+//! - **Container remuxing** — lossless format conversion (e.g. MKV → MP4)
+//! - **Rich metadata** — video dimensions, frame rate, frame count, audio
+//!   sample rate, channels, codec info, multi-track audio/subtitle metadata
+//! - **Configurable output** — pixel format (RGB8, RGBA8, GRAY8) and target
+//!   resolution with aspect ratio preservation
+//! - **Progress & cancellation** — cooperative callbacks and
+//!   `CancellationToken` for long-running operations
+//! - **Streaming iteration** — lazy `FrameIterator` (pull-based) and
+//!   `for_each_frame` (push-based) without buffering entire frame sets
+//! - **Validation** — inspect media files for structural issues before
+//!   extraction
+//! - **Chapter support** — extract chapter metadata (titles, timestamps)
+//! - **Frame metadata** — per-frame decode info (PTS, keyframe, picture type)
+//! - **Segmented extraction** — extract from multiple disjoint time ranges
+//! - **Stream probing** — lightweight `MediaProbe` for quick inspection
+//! - **Thumbnail helpers** — single thumbnails, grids, and smart selection
 //! - **Efficient seeking** — seeks to nearest keyframe, then decodes forward
+//! - **Zero-copy in-memory audio** — uses FFmpeg's dynamic buffer I/O
+//!
+//! ### Optional Features
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `async-tokio` | `FrameStream` and `AudioFuture` for async extraction via Tokio |
+//! | `parallel` | `frames_parallel()` distributes decoding across rayon threads |
+//! | `hw-accel` | Hardware-accelerated decoding (CUDA, VAAPI, DXVA2, D3D11VA, VideoToolbox, QSV) |
+//! | `scene-detection` | Scene change detection via FFmpeg's `scdet` filter |
+//! | `full` | Enables all of the above |
 //!
 //! ## Requirements
 //!
 //! FFmpeg development libraries must be installed on your system. See the
-//! [README](https://github.com/example/unbundle#installation) for
+//! [README](https://github.com/skanderjeddi/unbundle#installation) for
 //! platform-specific instructions.
 
 pub mod audio;
@@ -73,10 +110,12 @@ pub mod hwaccel;
 pub mod metadata;
 #[cfg(feature = "parallel")]
 mod parallel;
+pub mod probe;
 pub mod progress;
 #[cfg(feature = "scene-detection")]
 pub mod scene;
 pub mod subtitle;
+pub mod thumbnail;
 pub mod unbundler;
 mod utilities;
 pub mod validation;
@@ -91,11 +130,13 @@ pub use error::UnbundleError;
 pub use iterator::FrameIterator;
 #[cfg(feature = "hw-accel")]
 pub use hwaccel::{HwAccelMode, HwDeviceType};
-pub use metadata::{AudioMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata};
+pub use metadata::{AudioMetadata, ChapterMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata};
+pub use probe::MediaProbe;
 pub use progress::{CancellationToken, OperationType, ProgressCallback, ProgressInfo};
 #[cfg(feature = "scene-detection")]
 pub use scene::{SceneChange, SceneDetectionConfig};
 pub use subtitle::{SubtitleEntry, SubtitleExtractor, SubtitleFormat};
+pub use thumbnail::{ThumbnailConfig, ThumbnailGenerator};
 pub use unbundler::MediaUnbundler;
 pub use validation::ValidationReport;
-pub use video::{FrameRange, VideoExtractor};
+pub use video::{FrameInfo, FrameRange, FrameType, VideoExtractor};

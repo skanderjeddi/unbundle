@@ -41,6 +41,11 @@ pub struct MediaMetadata {
     pub subtitle: Option<SubtitleMetadata>,
     /// Metadata for all subtitle tracks in the file.
     pub subtitle_tracks: Option<Vec<SubtitleMetadata>>,
+    /// Chapter metadata, if the container contains chapters.
+    ///
+    /// Chapters represent named time segments (e.g. scenes, acts) embedded in
+    /// the container. `None` when no chapters are present.
+    pub chapters: Option<Vec<ChapterMetadata>>,
     /// Total duration of the media file.
     pub duration: Duration,
     /// Container format name (e.g. `"mp4"`, `"matroska"`, `"avi"`).
@@ -85,6 +90,42 @@ pub struct AudioMetadata {
     pub track_index: usize,
     /// FFmpeg stream index within the container.
     pub(crate) stream_index: usize,
+}
+
+/// Metadata for a chapter within a media file.
+///
+/// Chapters represent named time segments (e.g. scenes, acts, or songs)
+/// embedded in the container by the authoring tool. Not all containers
+/// support chapters; when present they are extracted at open time and
+/// stored in [`MediaMetadata::chapters`].
+///
+/// # Example
+///
+/// ```no_run
+/// use unbundle::MediaUnbundler;
+///
+/// let unbundler = MediaUnbundler::open("input.mkv")?;
+/// if let Some(chapters) = unbundler.metadata().chapters.as_ref() {
+///     for chapter in chapters {
+///         println!("[{:?}–{:?}] {}", chapter.start, chapter.end,
+///             chapter.title.as_deref().unwrap_or("(untitled)"));
+///     }
+/// }
+/// # Ok::<(), unbundle::UnbundleError>(())
+/// ```
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct ChapterMetadata {
+    /// Human-readable chapter title, if tagged (e.g. `"Opening Credits"`).
+    pub title: Option<String>,
+    /// Start time of the chapter.
+    pub start: Duration,
+    /// End time of the chapter.
+    pub end: Duration,
+    /// Zero-based chapter index within the container.
+    pub index: usize,
+    /// The chapter's unique identifier as stored in the container.
+    pub id: i64,
 }
 
 /// Metadata for a subtitle stream.

@@ -85,6 +85,41 @@ ffmpeg -y \
 rm -f "${FIXTURES_DIR}/temp_subs.srt"
 echo "  Created sample_with_subtitles.mkv"
 
+# 7. sample_with_chapters.mkv — MKV with chapter markers
+cat > "${FIXTURES_DIR}/temp_chapters.txt" <<'EOF'
+;FFMETADATA1
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=2000
+title=Introduction
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=2000
+END=4000
+title=Main Content
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=4000
+END=5000
+title=Conclusion
+EOF
+
+ffmpeg -y \
+    -f lavfi -i "testsrc=duration=5:size=320x240:rate=25" \
+    -f lavfi -i "sine=frequency=500:duration=5:sample_rate=44100" \
+    -i "${FIXTURES_DIR}/temp_chapters.txt" \
+    -map_metadata 1 \
+    -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+    -c:a aac -b:a 64k -ac 2 \
+    -shortest \
+    "${FIXTURES_DIR}/sample_with_chapters.mkv"
+rm -f "${FIXTURES_DIR}/temp_chapters.txt"
+echo "  Created sample_with_chapters.mkv"
+
 echo ""
 echo "All fixtures generated successfully."
 echo "You can now run: cargo test"

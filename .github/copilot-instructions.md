@@ -13,23 +13,87 @@
 - `FrameIterator` provides lazy, pull-based frame iteration using `Packet::read` for packet-level control. See [src/iterator.rs](../src/iterator.rs).
 - `Remuxer` performs lossless container format conversion without re-encoding. See [src/convert.rs](../src/convert.rs).
 - `ValidationReport` inspects cached metadata for potential issues. See [src/validation.rs](../src/validation.rs).
+- `ChapterMetadata` stores chapter information (title, start/end times, index, id) extracted from the container at open time. See [src/metadata.rs](../src/metadata.rs).
+- `FrameInfo` and `FrameType` provide per-frame decode metadata (PTS, keyframe flag, picture type) returned by `frame_with_info` / `frames_with_info`. See [src/video.rs](../src/video.rs).
+- `FrameRange::Segments` allows extracting frames from multiple disjoint time ranges in a single call. See [src/video.rs](../src/video.rs).
+- `MediaProbe` is a lightweight, stateless probing helper that opens a file, clones `MediaMetadata`, and drops the demuxer immediately. See [src/probe.rs](../src/probe.rs).
+- `ThumbnailGenerator` and `ThumbnailConfig` provide high-level thumbnail helpers: single-frame thumbnails, contact-sheet grids, and variance-based "smart" thumbnail selection. See [src/thumbnail.rs](../src/thumbnail.rs).
 
 ### Feature-gated modules
 - `async-tokio`: `FrameStream` (background decode thread → mpsc channel → `tokio_stream::Stream`) and `AudioFuture` for non-blocking extraction. See [src/stream.rs](../src/stream.rs).
-- `parallel`: `frames_parallel()` distributes frame decoding across rayon threads, each with its own demuxer. See [src/parallel.rs](../src/parallel.rs).
-- `hw-accel`: `HwAccelMode`, `HwDeviceType`, and helpers for FFmpeg hardware-accelerated decoding via `ffmpeg_sys_next`. See [src/hwaccel.rs](../src/hwaccel.rs).
+- `parallel`: `frames_parallel()` distributes frame decoding across rayon threads, each with its own demuxer. See [src/parallel.rs](../src/parallel.rs). Note: `parallel` is a private module (`mod parallel`, not `pub mod`); only exposed through `VideoExtractor::frames_parallel()`.
+- `hw-accel`: `HwAccelMode`, `HwDeviceType`, and helpers for FFmpeg hardware-accelerated decoding via `ffmpeg_sys_next`. Also provides `available_hw_devices()` to enumerate supported hardware decoders at runtime. See [src/hwaccel.rs](../src/hwaccel.rs).
 - `scene-detection`: `SceneChange` and `SceneDetectionConfig` using FFmpeg's `scdet` filter. See [src/scene.rs](../src/scene.rs).
+
+## Source file inventory
+
+| File | Purpose |
+|------|---------|
+| [src/lib.rs](../src/lib.rs) | Module declarations and root-level re-exports |
+| [src/unbundler.rs](../src/unbundler.rs) | `MediaUnbundler` — main entry point, file opening, metadata caching |
+| [src/video.rs](../src/video.rs) | `VideoExtractor`, `FrameRange`, `FrameInfo`, `FrameType` — frame extraction, selection, and metadata |
+| [src/audio.rs](../src/audio.rs) | `AudioExtractor`, `AudioFormat`, `PacketWriter` — audio encoding/extraction |
+| [src/subtitle.rs](../src/subtitle.rs) | `SubtitleExtractor`, `SubtitleEntry`, `SubtitleFormat` — subtitle decoding |
+| [src/error.rs](../src/error.rs) | `UnbundleError` — non-exhaustive error enum with context |
+| [src/metadata.rs](../src/metadata.rs) | `MediaMetadata`, `VideoMetadata`, `AudioMetadata`, `SubtitleMetadata`, `ChapterMetadata` |
+| [src/config.rs](../src/config.rs) | `ExtractionConfig`, `FrameOutputConfig`, `OutputPixelFormat` |
+| [src/progress.rs](../src/progress.rs) | `ProgressCallback`, `ProgressInfo`, `CancellationToken`, `OperationType` |
+| [src/iterator.rs](../src/iterator.rs) | `FrameIterator` — lazy pull-based frame iteration |
+| [src/convert.rs](../src/convert.rs) | `Remuxer` — lossless container format conversion |
+| [src/validation.rs](../src/validation.rs) | `ValidationReport` — media file structural validation |
+| [src/utilities.rs](../src/utilities.rs) | Internal timestamp/buffer helpers (not public) |
+| [src/stream.rs](../src/stream.rs) | `FrameStream`, `AudioFuture` — async extraction (`async-tokio`) |
+| [src/parallel.rs](../src/parallel.rs) | Internal parallel extraction logic (`parallel`) |
+| [src/hwaccel.rs](../src/hwaccel.rs) | `HwAccelMode`, `HwDeviceType` — hardware decoding (`hw-accel`) |
+| [src/scene.rs](../src/scene.rs) | `SceneChange`, `SceneDetectionConfig` — scene detection (`scene-detection`) |
+| [src/probe.rs](../src/probe.rs) | `MediaProbe` — lightweight stateless media file probing |
+| [src/thumbnail.rs](../src/thumbnail.rs) | `ThumbnailGenerator`, `ThumbnailConfig` — thumbnail generation helpers |
 
 ## Developer workflows
 - Build: `cargo build` (FFmpeg dev libraries must be installed; see README).
 - Build with all features: `cargo build --all-features`.
-- Tests: generate fixtures first (`tests/fixtures/generate_fixtures.sh` or `.bat`), then run `cargo test`.
+- Tests: generate fixtures first (`tests/fixtures/generate_fixtures.sh` or `.bat`), then run `cargo test --all-features`.
 - Examples: `cargo run --example <name> -- path/to/video.mp4`; example entry points live in [examples/](../examples/).
-- Benchmarks: `cargo bench` runs Criterion benchmarks in [benches/](../benches/).
+- Benchmarks: `cargo bench --all-features` runs Criterion benchmarks in [benches/](../benches/).
+
+### Examples
+| Example | Description |
+|---------|-------------|
+| `extract_frames` | Extract frames by number, timestamp, range, interval |
+| `extract_audio` | Extract the complete audio track |
+| `extract_audio_segment` | Extract a specific time range as MP3 |
+| `thumbnail_grid` | Create a thumbnail grid from evenly-spaced frames |
+| `metadata` | Display all media metadata |
+| `frame_iterator` | Lazy frame iteration with early exit |
+| `pixel_formats` | Demonstrate RGB8/RGBA8/GRAY8 output |
+| `progress` | Progress callbacks and cancellation |
+| `subtitles` | Extract subtitles as SRT/WebVTT/raw text |
+| `remux` | Lossless container format conversion |
+| `validate` | Media file validation report |
+
+### Test suites
+| Test file | Coverage |
+|-----------|----------|
+| `tests/video_extraction.rs` | Single frames, ranges, intervals, timestamps, specific lists, pixel formats, resolution scaling |
+| `tests/audio_extraction.rs` | WAV/MP3/FLAC/AAC extraction, ranges, file output, multi-track |
+| `tests/subtitle_extraction.rs` | Subtitle decoding, SRT/WebVTT export, multi-track |
+| `tests/metadata.rs` | Container metadata, video/audio/subtitle stream properties |
+| `tests/config.rs` | ExtractionConfig builder, pixel formats, resolution, cancellation |
+| `tests/progress.rs` | ProgressCallback, ProgressInfo fields, CancellationToken |
+| `tests/error_handling.rs` | Error variants, context, invalid inputs, missing streams |
+| `tests/frame_iterator.rs` | FrameIterator, lazy iteration, early exit |
+| `tests/conversion.rs` | Remuxer, stream exclusion, lossless format conversion |
+| `tests/validation.rs` | ValidationReport, warnings, errors, valid files |
+| `tests/scene_detection.rs` | Scene change detection, threshold configuration |
+| `tests/chapters.rs` | Chapter metadata extraction, titles, timestamps, ordering |
+| `tests/frame_metadata.rs` | FrameInfo, FrameType, keyframe detection, PTS values |
+| `tests/segmented_extraction.rs` | FrameRange::Segments, multiple disjoint time ranges |
+| `tests/probing.rs` | MediaProbe, probe/probe_many, error handling |
+| `tests/thumbnail.rs` | ThumbnailGenerator, grid, smart selection, aspect ratio |
 
 ## Project-specific conventions and patterns
 - Metadata is extracted once at open; avoid recomputing stream properties if `MediaMetadata` already provides them.
-- `MediaMetadata` includes `audio_tracks: Option<Vec<AudioMetadata>>` and `subtitle_tracks: Option<Vec<SubtitleMetadata>>` for multi-track access.
+- `MediaMetadata` includes `audio_tracks: Option<Vec<AudioMetadata>>`, `subtitle_tracks: Option<Vec<SubtitleMetadata>>`, and `chapters: Option<Vec<ChapterMetadata>>` for multi-track and chapter access.
 - Frame selection logic prefers sequential decoding when possible; `FrameRange::Specific` sorts/dedups inputs to minimize seeks.
 - Timestamp validation is done against `MediaMetadata.duration`; follow this pattern in new range-based APIs.
 - Frame conversion uses `frame_to_buffer(bytes_per_pixel)` from utilities with row-stride handling; `FrameOutputConfig` controls pixel format (RGB8/RGBA8/GRAY8) and resolution.
@@ -39,6 +103,10 @@
 - Methods returning `_with_config` variants accept `ExtractionConfig` for progress/cancellation; the original methods delegate to these with default config.
 - Async methods (`frames_stream`, `extract_async`) open a fresh demuxer on a blocking thread and release the unbundler borrow immediately.
 - Parallel extraction (`frames_parallel`) splits frame numbers into contiguous runs and processes each on a separate rayon thread with its own demuxer.
+- `FrameRange::Segments` resolves disjoint `(Duration, Duration)` time ranges into a sorted, deduplicated list of frame numbers, then delegates to `FrameRange::Specific`.
+- `frame_with_info` / `frames_with_info` return `(DynamicImage, FrameInfo)` pairs; `FrameInfo` carries frame number, timestamp, PTS, keyframe flag, and `FrameType`.
+- `MediaProbe::probe()` opens a file, clones `MediaMetadata`, and drops the demuxer immediately for lightweight inspection.
+- `ThumbnailGenerator` uses `VideoExtractor` internally; `smart()` picks the frame with the highest grayscale pixel variance to avoid blank/black frames.
 
 ## Coding conventions
 - Public APIs return `Result<T, UnbundleError>` and convert upstream FFmpeg/image errors into `UnbundleError` variants (see [src/error.rs](../src/error.rs)).
@@ -52,8 +120,10 @@
 ## Integrations and dependencies
 - FFmpeg is required at build/runtime and accessed through `ffmpeg-next` and `ffmpeg-sys-next`; use those crates for all media I/O and encoding.
 - `image` is used for `DynamicImage` outputs; avoid introducing alternative image types unless required.
+- `thiserror` is used for `UnbundleError` derive macros.
 - Errors should be mapped into `UnbundleError` variants instead of bubbling raw FFmpeg errors.
 - Optional dependencies: `tokio`/`tokio-stream`/`futures-core` (async), `rayon`/`crossbeam-channel` (parallel).
+- Dev dependencies: `criterion` (benchmarks), `tempfile` (test I/O), `tokio` with `rt-multi-thread` (async tests).
 
 ---
 
@@ -132,7 +202,7 @@ The following is a detailed prompt for any LLM (language model) working on the `
 
 **4.1 FrameRange API**
 - Frame selection is centralized in the `FrameRange` enum. Extend this enum for new selection patterns.
-- Supported variants: `Range`, `Interval`, `TimeRange`, `TimeInterval`, `Specific`.
+- Supported variants: `Range`, `Interval`, `TimeRange`, `TimeInterval`, `Specific`, `Segments`.
 - `FrameRange::Specific` sorts and deduplicates frame numbers to minimize seeks.
 
 **4.2 Sequential Decoding Preference**
@@ -190,6 +260,7 @@ The following is a detailed prompt for any LLM (language model) working on the `
 **6.2 Optional Streams**
 - `metadata.video`, `metadata.audio`, and `metadata.subtitle` are `Option<T>` — files may lack any stream type.
 - `metadata.audio_tracks` and `metadata.subtitle_tracks` are `Option<Vec<T>>` for multi-track access.
+- `metadata.chapters` is `Option<Vec<ChapterMetadata>>` for chapter access; chapters are extracted from the container at open time.
 - Always check for `None` before accessing stream-specific properties.
 - Return `UnbundleError::NoVideoStream`, `UnbundleError::NoAudioStream`, or `UnbundleError::NoSubtitleStream` when the required stream is missing.
 - Use `unbundler.audio_track(index)` and `unbundler.subtitle_track(index)` for multi-track extraction.
@@ -240,7 +311,6 @@ use std::{io, fs, path::Path};
 // ✅ CORRECT — three groups with blank lines, siblings merged
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
-use std::ptr;
 use std::time::Duration;
 
 use ffmpeg_next::{ChannelLayout, Packet, Rational};
@@ -322,10 +392,16 @@ let buffer = crate::utilities::frame_to_rgb_buffer(frame, width, height);
 let ts = crate::utilities::duration_to_stream_timestamp(duration, time_base);
 let frame_num = crate::utilities::timestamp_to_frame_number(timestamp, fps);
 
-// ❌ WRONG — never import freestanding functions
+// ✅ CORRECT — std library functions are also fully qualified
+let ptr: *mut u8 = std::ptr::null_mut();
+let ptr: *const u8 = std::ptr::null();
+
+// ❌ WRONG — never import freestanding functions or their parent modules
 use crate::utilities::frame_to_rgb_buffer;       // NO!
 use crate::utilities::*;                         // NO!
+use std::ptr;                                    // NO!
 frame_to_rgb_buffer(frame, width, height);       // NO! (unqualified call)
+ptr::null_mut();                                 // NO! (module-qualified call)
 ```
 
 **DO NOT IMPORT: Macros — call them fully qualified:**
@@ -348,6 +424,7 @@ criterion_group!(benches, bench_fn);  // NO! (unqualified call)
 | Enum                   | ✅ Yes       | `UnbundleError::NoVideoStream`                   |
 | Enum Variant           | ❌ No        | Always qualify: `Enum::Variant`                  |
 | Freestanding Function  | ❌ No        | Always qualify: `crate::module::function()`      |
+| Module (for free fns)  | ❌ No        | Never `use std::ptr;` — use `std::ptr::null()`   |
 | Macro                  | ❌ No        | Always qualify: `crate_name::macro!()`           |
 | Trait                  | ✅ Yes       | Import to bring methods into scope               |
 | Associated Function    | N/A          | Call via type: `Type::function()`                |
