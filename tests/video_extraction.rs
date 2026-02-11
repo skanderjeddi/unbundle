@@ -5,7 +5,7 @@
 
 use std::{path::Path, time::Duration};
 
-use unbundle::{FrameRange, MediaUnbundler};
+use unbundle::{FrameRange, MediaUnbundler, UnbundleError};
 
 /// Path to the standard test video fixture (5s, 640×480, 30 fps, with audio).
 fn sample_video_path() -> &'static str {
@@ -231,4 +231,178 @@ fn video_only_file_works() {
         .expect("Failed to extract frame from video-only file");
     assert!(frame.width() > 0);
     assert!(frame.height() > 0);
+}
+
+#[test]
+fn invalid_range_returns_error() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let result = unbundler.video().frames(FrameRange::Range(10, 5));
+
+    assert!(result.is_err(), "Expected InvalidRange error");
+    assert!(
+        matches!(result.unwrap_err(), UnbundleError::InvalidRange { .. }),
+        "Expected InvalidRange variant",
+    );
+}
+
+#[test]
+fn zero_interval_returns_error() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let result = unbundler.video().frames(FrameRange::Interval(0));
+
+    assert!(result.is_err(), "Expected InvalidInterval error");
+    assert!(
+        matches!(result.unwrap_err(), UnbundleError::InvalidInterval),
+        "Expected InvalidInterval variant",
+    );
+}
+
+#[test]
+fn invalid_time_range_returns_error() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let result = unbundler.video().frames(FrameRange::TimeRange(
+        Duration::from_secs(3),
+        Duration::from_secs(1),
+    ));
+
+    assert!(result.is_err(), "Expected InvalidRange error for time range");
+    assert!(
+        matches!(result.unwrap_err(), UnbundleError::InvalidRange { .. }),
+        "Expected InvalidRange variant",
+    );
+}
+
+#[test]
+fn zero_time_interval_returns_error() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let result = unbundler
+        .video()
+        .frames(FrameRange::TimeInterval(Duration::ZERO));
+
+    assert!(
+        result.is_err(),
+        "Expected InvalidInterval error for zero time interval"
+    );
+    assert!(
+        matches!(result.unwrap_err(), UnbundleError::InvalidInterval),
+        "Expected InvalidInterval variant",
+    );
+}
+
+#[test]
+fn save_frame_to_file() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let output = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    let output_path = output.path().with_extension("png");
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    unbundler
+        .video()
+        .save_frame(0, &output_path)
+        .expect("Failed to save frame");
+
+    let written_bytes = std::fs::read(&output_path).expect("Failed to read output file");
+    assert!(!written_bytes.is_empty(), "Expected non-empty PNG file");
+
+    let _ = std::fs::remove_file(&output_path);
+}
+
+#[test]
+fn save_frame_at_to_file() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let output = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    let output_path = output.path().with_extension("png");
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    unbundler
+        .video()
+        .save_frame_at(Duration::from_secs(1), &output_path)
+        .expect("Failed to save frame at timestamp");
+
+    let written_bytes = std::fs::read(&output_path).expect("Failed to read output file");
+    assert!(!written_bytes.is_empty(), "Expected non-empty PNG file");
+
+    let _ = std::fs::remove_file(&output_path);
+}
+
+#[test]
+fn for_each_frame_processes_all() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+
+    let mut count = 0u64;
+    unbundler
+        .video()
+        .for_each_frame(FrameRange::Range(0, 4), |frame_number, image| {
+            assert!(image.width() > 0);
+            assert!(image.height() > 0);
+            assert!(frame_number <= 4);
+            count += 1;
+            Ok(())
+        })
+        .expect("Failed to process frames");
+
+    assert!(count > 0, "Expected at least one frame to be processed");
+}
+
+#[test]
+fn for_each_frame_matches_frames() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    // Verify for_each_frame processes the same number of frames as frames().
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let collected = unbundler
+        .video()
+        .frames(FrameRange::Range(0, 9))
+        .expect("Failed to extract frames");
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let mut streaming_count = 0u64;
+    unbundler
+        .video()
+        .for_each_frame(FrameRange::Range(0, 9), |_, _| {
+            streaming_count += 1;
+            Ok(())
+        })
+        .expect("Failed to process frames");
+
+    assert_eq!(
+        collected.len() as u64, streaming_count,
+        "for_each_frame and frames() should produce the same count",
+    );
 }

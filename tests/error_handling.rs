@@ -5,7 +5,7 @@
 
 use std::{path::Path, time::Duration};
 
-use unbundle::{AudioFormat, MediaUnbundler};
+use unbundle::{AudioFormat, MediaUnbundler, UnbundleError};
 
 #[test]
 fn open_nonexistent_file() {
@@ -119,4 +119,32 @@ fn invalid_audio_range_timestamps() {
         AudioFormat::Wav,
     );
     assert!(result.is_err());
+}
+
+#[test]
+fn audio_range_start_after_end() {
+    let path = "tests/fixtures/sample_video.mp4";
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let result = unbundler.audio().extract_range(
+        Duration::from_secs(3),
+        Duration::from_secs(1),
+        AudioFormat::Wav,
+    );
+    assert!(result.is_err(), "Expected error when start >= end");
+    assert!(
+        matches!(result.unwrap_err(), UnbundleError::InvalidRange { .. }),
+        "Expected InvalidRange variant",
+    );
+}
+
+#[test]
+fn audio_format_display() {
+    assert_eq!(format!("{}", AudioFormat::Wav), "WAV");
+    assert_eq!(format!("{}", AudioFormat::Mp3), "MP3");
+    assert_eq!(format!("{}", AudioFormat::Flac), "FLAC");
+    assert_eq!(format!("{}", AudioFormat::Aac), "AAC");
 }

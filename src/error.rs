@@ -61,8 +61,21 @@ pub enum UnbundleError {
     #[error("Invalid timestamp: {0:?}")]
     InvalidTimestamp(Duration),
 
+    /// A range's start value is greater than or equal to its end value.
+    #[error("Invalid range: start ({start:?}) must be less than end ({end:?})")]
+    InvalidRange {
+        /// The start of the range.
+        start: String,
+        /// The end of the range.
+        end: String,
+    },
+
+    /// An interval or step value of zero was provided.
+    #[error("Interval must be greater than zero")]
+    InvalidInterval,
+
     /// The requested audio output format is not supported.
-    #[error("Unsupported audio format: {0:?}")]
+    #[error("Unsupported audio format: {0}")]
     UnsupportedAudioFormat(AudioFormat),
 
     /// An error originating from the FFmpeg libraries.

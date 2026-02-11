@@ -19,6 +19,8 @@
 - Frame selection logic prefers sequential decoding when possible; `FrameRange::Specific` sorts/dedups inputs to minimize seeks.
 - Timestamp validation is done against `MediaMetadata.duration`; follow this pattern in new range-based APIs.
 - Frame conversion expects RGB24 with row-stride handling via `frame_to_rgb_buffer` rather than direct plane copies.
+- Audio code uses a `PacketWriter` trait to abstract in-memory vs file output; add new output targets by implementing this trait.
+- The `for_each_frame` method provides streaming frame processing without collecting into a `Vec`; prefer it when frames can be processed independently.
 
 ## Coding conventions
 - Public APIs return `Result<T, UnbundleError>` and convert upstream FFmpeg/image errors into `UnbundleError` variants (see [src/error.rs](../src/error.rs)).
@@ -57,6 +59,8 @@ The following is a detailed prompt for any LLM (language model) working on the `
 - Audio extraction supports both file and in-memory output.
 - In-memory output MUST use FFmpeg's dynamic buffer I/O (`avio_open_dyn_buf` / `avio_close_dyn_buf`) via `ffmpeg_sys_next`.
 - Never write to a temp file and read it back for in-memory output.
+- The `PacketWriter` trait abstracts packet writing for both output targets; `MemoryPacketWriter` (unsafe, raw `AVFormatContext`) and `FilePacketWriter` (safe, `Output`) implement it.
+- When adding new audio output targets, implement the `PacketWriter` trait in `src/audio.rs`.
 
 ### 2. Error Handling Rules
 
@@ -92,7 +96,7 @@ The following is a detailed prompt for any LLM (language model) working on the `
 
 **4.1 FrameRange API**
 - Frame selection is centralized in the `FrameRange` enum. Extend this enum for new selection patterns.
-- Supported variants: `Single`, `Range`, `Interval`, `TimeRange`, `TimeInterval`, `Specific`.
+- Supported variants: `Range`, `Interval`, `TimeRange`, `TimeInterval`, `Specific`.
 - `FrameRange::Specific` sorts and deduplicates frame numbers to minimize seeks.
 
 **4.2 Sequential Decoding Preference**
@@ -107,6 +111,14 @@ The following is a detailed prompt for any LLM (language model) working on the `
 **4.4 Validation**
 - Validate timestamps against `metadata.duration` before extraction.
 - Return `UnbundleError::FrameOutOfRange` or `UnbundleError::InvalidTimestamp` for invalid inputs.
+- Return `UnbundleError::InvalidRange` when range start exceeds end.
+- Return `UnbundleError::InvalidInterval` when interval/step is zero.
+
+**4.5 Streaming vs Collecting**
+- `frames()` collects all decoded frames into a `Vec<DynamicImage>`.
+- `for_each_frame()` processes frames one at a time via a callback without collecting.
+- Both share the same internal decode logic via `process_frame_range` and `process_specific_frames`.
+- Prefer `for_each_frame` when frames can be processed independently (e.g. saving to disk).
 
 ### 5. Audio Extraction Rules
 

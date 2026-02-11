@@ -23,6 +23,7 @@ use std::time::Duration;
 /// println!("Format: {}", metadata.format);
 /// ```
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct MediaMetadata {
     /// Video stream metadata, if a video stream is present.
     pub video: Option<VideoMetadata>,
@@ -38,6 +39,7 @@ pub struct MediaMetadata {
 ///
 /// Includes dimensions, frame rate, estimated frame count, and codec name.
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct VideoMetadata {
     /// Frame width in pixels.
     pub width: u32,
@@ -55,6 +57,7 @@ pub struct VideoMetadata {
 ///
 /// Includes sample rate, channel count, codec name, and bit rate.
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct AudioMetadata {
     /// Sample rate in hertz (e.g. `44100`, `48000`).
     pub sample_rate: u32,

@@ -36,6 +36,17 @@ pub enum AudioFormat {
     Aac,
 }
 
+impl std::fmt::Display for AudioFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AudioFormat::Wav => write!(f, "WAV"),
+            AudioFormat::Mp3 => write!(f, "MP3"),
+            AudioFormat::Flac => write!(f, "FLAC"),
+            AudioFormat::Aac => write!(f, "AAC"),
+        }
+    }
+}
+
 impl AudioFormat {
     /// Return the FFmpeg container format name for this audio format.
     fn container_name(&self) -> &'static str {
@@ -122,6 +133,12 @@ impl<'a> AudioExtractor<'a> {
         end: Duration,
         format: AudioFormat,
     ) -> Result<Vec<u8>, UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
         self.extract_audio_to_memory(format, Some(start), Some(end))
     }
 
@@ -183,6 +200,12 @@ impl<'a> AudioExtractor<'a> {
         end: Duration,
         format: AudioFormat,
     ) -> Result<(), UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
         self.save_audio_to_file(path.as_ref(), format, Some(start), Some(end))
     }
 
@@ -398,6 +421,7 @@ impl<'a> AudioExtractor<'a> {
             let mut resampled_frame = AudioFrame::empty();
             let mut encoded_packet = Packet::empty();
             let mut samples_written: i64 = 0;
+            let mut writer = MemoryPacketWriter { format_context: output_format_context };
 
             let transcode_result = self.transcode_audio_packets(
                 audio_stream_index,
@@ -408,10 +432,9 @@ impl<'a> AudioExtractor<'a> {
                 &mut resampled_frame,
                 &mut encoded_packet,
                 &mut samples_written,
-                input_time_base,
                 encoder_time_base,
                 end_stream_timestamp,
-                output_format_context,
+                &mut writer,
             );
 
             if let Err(error) = transcode_result {
@@ -439,7 +462,7 @@ impl<'a> AudioExtractor<'a> {
                     &mut encoded_packet,
                     &mut samples_written,
                     encoder_time_base,
-                    output_format_context,
+                    &mut writer,
                 ) {
                     let mut buffer_pointer: *mut u8 = ptr::null_mut();
                     ffmpeg_sys_next::avio_close_dyn_buf(
@@ -602,45 +625,46 @@ impl<'a> AudioExtractor<'a> {
         let mut encoded_packet = Packet::empty();
         let mut samples_written: i64 = 0;
 
-        // Decode → resample → encode → write loop.
-        self.transcode_audio_packets_to_file(
-            audio_stream_index,
-            &mut decoder,
-            &mut resampler,
-            &mut encoder,
-            &mut decoded_audio_frame,
-            &mut resampled_frame,
-            &mut encoded_packet,
-            &mut samples_written,
-            input_time_base,
-            encoder_time_base,
-            end_stream_timestamp,
-            &mut output_context,
-        )?;
+        {
+            let mut writer = FilePacketWriter { output_context: &mut output_context };
 
-        // Flush decoder.
-        let _ = decoder.send_eof();
-        while decoder.receive_frame(&mut decoded_audio_frame).is_ok() {
-            resample_encode_write_to_file(
+            // Decode → resample → encode → write loop.
+            self.transcode_audio_packets(
+                audio_stream_index,
+                &mut decoder,
                 &mut resampler,
                 &mut encoder,
-                &decoded_audio_frame,
+                &mut decoded_audio_frame,
                 &mut resampled_frame,
                 &mut encoded_packet,
                 &mut samples_written,
                 encoder_time_base,
-                &mut output_context,
+                end_stream_timestamp,
+                &mut writer,
             )?;
-        }
 
-        // Flush encoder.
-        let _ = encoder.send_eof();
-        while encoder.receive_packet(&mut encoded_packet).is_ok() {
-            encoded_packet.set_stream(0);
-            encoded_packet.rescale_ts(encoder_time_base, encoder_time_base);
-            encoded_packet
-                .write_interleaved(&mut output_context)
-                .map_err(|error| UnbundleError::AudioEncodeError(error.to_string()))?;
+            // Flush decoder.
+            let _ = decoder.send_eof();
+            while decoder.receive_frame(&mut decoded_audio_frame).is_ok() {
+                resample_encode_write(
+                    &mut resampler,
+                    &mut encoder,
+                    &decoded_audio_frame,
+                    &mut resampled_frame,
+                    &mut encoded_packet,
+                    &mut samples_written,
+                    encoder_time_base,
+                    &mut writer,
+                )?;
+            }
+
+            // Flush encoder.
+            let _ = encoder.send_eof();
+            while encoder.receive_packet(&mut encoded_packet).is_ok() {
+                encoded_packet.set_stream(0);
+                encoded_packet.rescale_ts(encoder_time_base, encoder_time_base);
+                writer.write_packet(&mut encoded_packet)?;
+            }
         }
 
         output_context
@@ -690,14 +714,9 @@ impl<'a> AudioExtractor<'a> {
         Ok((encoder, time_base))
     }
 
-    /// Decode, resample, encode, and write audio packets (in-memory variant).
-    ///
-    /// # Safety
-    ///
-    /// `output_format_context` must be a valid, non-null pointer to an
-    /// `AVFormatContext` with an open dynamic buffer attached to `pb`.
+    /// Decode, resample, encode, and write audio packets to the given output.
     #[allow(clippy::too_many_arguments)]
-    unsafe fn transcode_audio_packets(
+    fn transcode_audio_packets<W: PacketWriter>(
         &mut self,
         audio_stream_index: usize,
         decoder: &mut AudioDecoder,
@@ -707,71 +726,9 @@ impl<'a> AudioExtractor<'a> {
         resampled_frame: &mut AudioFrame,
         encoded_packet: &mut Packet,
         samples_written: &mut i64,
-        _input_time_base: Rational,
         encoder_time_base: Rational,
         end_stream_timestamp: Option<i64>,
-        output_format_context: *mut AVFormatContext,
-    ) -> Result<(), UnbundleError> {
-        for (stream, packet) in self.unbundler.input_context.packets() {
-            if stream.index() != audio_stream_index {
-                continue;
-            }
-
-            // Check if we've passed the end timestamp.
-            if let Some(end_timestamp) = end_stream_timestamp
-                && let Some(packet_pts) = packet.pts()
-                && packet_pts > end_timestamp
-            {
-                break;
-            }
-
-            decoder
-                .send_packet(&packet)
-                .map_err(|error| UnbundleError::AudioDecodeError(error.to_string()))?;
-
-            while decoder.receive_frame(decoded_audio_frame).is_ok() {
-                // Check frame timestamp against end bound.
-                if let Some(end_timestamp) = end_stream_timestamp
-                    && let Some(pts) = decoded_audio_frame.pts()
-                    && pts > end_timestamp
-                {
-                    return Ok(());
-                }
-
-                unsafe {
-                    resample_encode_write(
-                        resampler,
-                        encoder,
-                        decoded_audio_frame,
-                        resampled_frame,
-                        encoded_packet,
-                        samples_written,
-                        encoder_time_base,
-                        output_format_context,
-                    )
-                }?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Decode, resample, encode, and write audio packets (file variant).
-    #[allow(clippy::too_many_arguments)]
-    fn transcode_audio_packets_to_file(
-        &mut self,
-        audio_stream_index: usize,
-        decoder: &mut AudioDecoder,
-        resampler: &mut ResamplingContext,
-        encoder: &mut AudioEncoder,
-        decoded_audio_frame: &mut AudioFrame,
-        resampled_frame: &mut AudioFrame,
-        encoded_packet: &mut Packet,
-        samples_written: &mut i64,
-        _input_time_base: Rational,
-        encoder_time_base: Rational,
-        end_stream_timestamp: Option<i64>,
-        output_context: &mut Output,
+        writer: &mut W,
     ) -> Result<(), UnbundleError> {
         for (stream, packet) in self.unbundler.input_context.packets() {
             if stream.index() != audio_stream_index {
@@ -797,7 +754,7 @@ impl<'a> AudioExtractor<'a> {
                     return Ok(());
                 }
 
-                resample_encode_write_to_file(
+                resample_encode_write(
                     resampler,
                     encoder,
                     decoded_audio_frame,
@@ -805,7 +762,7 @@ impl<'a> AudioExtractor<'a> {
                     encoded_packet,
                     samples_written,
                     encoder_time_base,
-                    output_context,
+                    writer,
                 )?;
             }
         }
@@ -814,52 +771,52 @@ impl<'a> AudioExtractor<'a> {
     }
 }
 
-/// Resample a decoded frame, encode it, and write packets to the in-memory
-/// output context.
+/// Trait abstracting how encoded audio packets are written to an output.
 ///
-/// # Safety
-///
-/// `output_format_context` must be a valid pointer to an `AVFormatContext`
-/// with an open I/O context.
-#[allow(clippy::too_many_arguments)]
-unsafe fn resample_encode_write(
-    resampler: &mut ResamplingContext,
-    encoder: &mut AudioEncoder,
-    decoded_frame: &AudioFrame,
-    resampled_frame: &mut AudioFrame,
-    encoded_packet: &mut Packet,
-    samples_written: &mut i64,
-    encoder_time_base: Rational,
-    output_format_context: *mut AVFormatContext,
-) -> Result<(), UnbundleError> {
-    let _delay = resampler
-        .run(decoded_frame, resampled_frame)
-        .map_err(|error| UnbundleError::AudioEncodeError(error.to_string()))?;
-
-    resampled_frame.set_pts(Some(*samples_written));
-    *samples_written += resampled_frame.samples() as i64;
-
-    encoder
-        .send_frame(resampled_frame)
-        .map_err(|error| UnbundleError::AudioEncodeError(error.to_string()))?;
-
-    while encoder.receive_packet(encoded_packet).is_ok() {
-        encoded_packet.set_stream(0);
-        encoded_packet.rescale_ts(encoder_time_base, encoder_time_base);
-        unsafe {
-            ffmpeg_sys_next::av_interleaved_write_frame(
-                output_format_context,
-                encoded_packet.as_mut_ptr(),
-            );
-        }
-    }
-
-    Ok(())
+/// Two implementations exist:
+/// - [`MemoryPacketWriter`]: writes to an in-memory FFmpeg dynamic buffer
+/// - [`FilePacketWriter`]: writes to a file-backed FFmpeg output context
+trait PacketWriter {
+    /// Write a single encoded packet to the output.
+    fn write_packet(&mut self, packet: &mut Packet) -> Result<(), UnbundleError>;
 }
 
-/// Resample, encode, and write packets to a file-backed output context.
+/// Writes encoded audio packets to an in-memory FFmpeg dynamic buffer.
+///
+/// The raw pointer is not owned; callers are responsible for lifetime and
+/// cleanup of the underlying `AVFormatContext`.
+struct MemoryPacketWriter {
+    format_context: *mut AVFormatContext,
+}
+
+impl PacketWriter for MemoryPacketWriter {
+    fn write_packet(&mut self, packet: &mut Packet) -> Result<(), UnbundleError> {
+        unsafe {
+            ffmpeg_sys_next::av_interleaved_write_frame(
+                self.format_context,
+                packet.as_mut_ptr(),
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Writes encoded audio packets to a file-backed FFmpeg output context.
+struct FilePacketWriter<'a> {
+    output_context: &'a mut Output,
+}
+
+impl PacketWriter for FilePacketWriter<'_> {
+    fn write_packet(&mut self, packet: &mut Packet) -> Result<(), UnbundleError> {
+        packet
+            .write_interleaved(self.output_context)
+            .map_err(|error| UnbundleError::AudioEncodeError(error.to_string()))
+    }
+}
+
+/// Resample a decoded frame, encode it, and write packets to the output.
 #[allow(clippy::too_many_arguments)]
-fn resample_encode_write_to_file(
+fn resample_encode_write<W: PacketWriter>(
     resampler: &mut ResamplingContext,
     encoder: &mut AudioEncoder,
     decoded_frame: &AudioFrame,
@@ -867,7 +824,7 @@ fn resample_encode_write_to_file(
     encoded_packet: &mut Packet,
     samples_written: &mut i64,
     encoder_time_base: Rational,
-    output_context: &mut Output,
+    writer: &mut W,
 ) -> Result<(), UnbundleError> {
     let _delay = resampler
         .run(decoded_frame, resampled_frame)
@@ -883,9 +840,7 @@ fn resample_encode_write_to_file(
     while encoder.receive_packet(encoded_packet).is_ok() {
         encoded_packet.set_stream(0);
         encoded_packet.rescale_ts(encoder_time_base, encoder_time_base);
-        encoded_packet
-            .write_interleaved(output_context)
-            .map_err(|error| UnbundleError::AudioEncodeError(error.to_string()))?;
+        writer.write_packet(encoded_packet)?;
     }
 
     Ok(())
