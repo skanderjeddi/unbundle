@@ -11,7 +11,7 @@
 - `ExtractionConfig` threads progress callbacks, cancellation tokens, pixel format, and resolution settings through extraction methods. See [src/config.rs](../src/config.rs).
 - `ProgressCallback` (infallible, `Send + Sync`) and `CancellationToken` (`Arc<AtomicBool>`) provide cooperative progress/cancellation. See [src/progress.rs](../src/progress.rs).
 - `FrameIterator` provides lazy, pull-based frame iteration using `Packet::read` for packet-level control. See [src/iterator.rs](../src/iterator.rs).
-- `Remuxer` performs lossless container format conversion without re-encoding. See [src/convert.rs](../src/convert.rs).
+- `Remuxer` performs lossless container format conversion without re-encoding. See [src/remux.rs](../src/remux.rs).
 - `ValidationReport` inspects cached metadata for potential issues. See [src/validation.rs](../src/validation.rs).
 - `ChapterMetadata` stores chapter information (title, start/end times, index, id) extracted from the container at open time. See [src/metadata.rs](../src/metadata.rs).
 - `FrameInfo` and `FrameType` provide per-frame decode metadata (PTS, keyframe flag, picture type) returned by `frame_with_info` / `frames_with_info`. See [src/video.rs](../src/video.rs).
@@ -22,7 +22,7 @@
 ### Feature-gated modules
 - `async-tokio`: `FrameStream` (background decode thread → mpsc channel → `tokio_stream::Stream`) and `AudioFuture` for non-blocking extraction. See [src/stream.rs](../src/stream.rs).
 - `parallel`: `frames_parallel()` distributes frame decoding across rayon threads, each with its own demuxer. See [src/parallel.rs](../src/parallel.rs). Note: `parallel` is a private module (`mod parallel`, not `pub mod`); only exposed through `VideoExtractor::frames_parallel()`.
-- `hw-accel`: `HwAccelMode`, `HwDeviceType`, and helpers for FFmpeg hardware-accelerated decoding via `ffmpeg_sys_next`. Also provides `available_hw_devices()` to enumerate supported hardware decoders at runtime. See [src/hwaccel.rs](../src/hwaccel.rs).
+- `hw-accel`: `HwAccelMode`, `HwDeviceType`, and helpers for FFmpeg hardware-accelerated decoding via `ffmpeg_sys_next`. Also provides `available_hw_devices()` to enumerate supported hardware decoders at runtime. See [src/hw_accel.rs](../src/hw_accel.rs).
 - `scene-detection`: `SceneChange` and `SceneDetectionConfig` using FFmpeg's `scdet` filter. See [src/scene.rs](../src/scene.rs).
 
 ## Source file inventory
@@ -33,18 +33,18 @@
 | [src/unbundler.rs](../src/unbundler.rs) | `MediaUnbundler` — main entry point, file opening, metadata caching |
 | [src/video.rs](../src/video.rs) | `VideoExtractor`, `FrameRange`, `FrameInfo`, `FrameType` — frame extraction, selection, and metadata |
 | [src/audio.rs](../src/audio.rs) | `AudioExtractor`, `AudioFormat`, `PacketWriter` — audio encoding/extraction |
-| [src/subtitle.rs](../src/subtitle.rs) | `SubtitleExtractor`, `SubtitleEntry`, `SubtitleFormat` — subtitle decoding |
+| [src/subtitle.rs](../src/subtitle.rs) | `SubtitleExtractor`, `SubtitleEvent`, `SubtitleFormat` — subtitle decoding |
 | [src/error.rs](../src/error.rs) | `UnbundleError` — non-exhaustive error enum with context |
 | [src/metadata.rs](../src/metadata.rs) | `MediaMetadata`, `VideoMetadata`, `AudioMetadata`, `SubtitleMetadata`, `ChapterMetadata` |
-| [src/config.rs](../src/config.rs) | `ExtractionConfig`, `FrameOutputConfig`, `OutputPixelFormat` |
+| [src/config.rs](../src/config.rs) | `ExtractionConfig`, `FrameOutputConfig`, `PixelFormat` |
 | [src/progress.rs](../src/progress.rs) | `ProgressCallback`, `ProgressInfo`, `CancellationToken`, `OperationType` |
 | [src/iterator.rs](../src/iterator.rs) | `FrameIterator` — lazy pull-based frame iteration |
-| [src/convert.rs](../src/convert.rs) | `Remuxer` — lossless container format conversion |
+| [src/remux.rs](../src/remux.rs) | `Remuxer` — lossless container format conversion |
 | [src/validation.rs](../src/validation.rs) | `ValidationReport` — media file structural validation |
 | [src/utilities.rs](../src/utilities.rs) | Internal timestamp/buffer helpers (not public) |
 | [src/stream.rs](../src/stream.rs) | `FrameStream`, `AudioFuture` — async extraction (`async-tokio`) |
 | [src/parallel.rs](../src/parallel.rs) | Internal parallel extraction logic (`parallel`) |
-| [src/hwaccel.rs](../src/hwaccel.rs) | `HwAccelMode`, `HwDeviceType` — hardware decoding (`hw-accel`) |
+| [src/hw_accel.rs](../src/hw_accel.rs) | `HwAccelMode`, `HwDeviceType` — hardware decoding (`hw-accel`) |
 | [src/scene.rs](../src/scene.rs) | `SceneChange`, `SceneDetectionConfig` — scene detection (`scene-detection`) |
 | [src/probe.rs](../src/probe.rs) | `MediaProbe` — lightweight stateless media file probing |
 | [src/thumbnail.rs](../src/thumbnail.rs) | `ThumbnailGenerator`, `ThumbnailConfig` — thumbnail generation helpers |
@@ -70,6 +70,10 @@
 | `subtitles` | Extract subtitles as SRT/WebVTT/raw text |
 | `remux` | Lossless container format conversion |
 | `validate` | Media file validation report |
+| `async_extraction` | Async frame streaming and audio extraction (`async-tokio`) |
+| `parallel_extraction` | Parallel frame extraction (`parallel`) |
+| `scene_detection` | Scene change detection (`scene-detection`) |
+| `hw_acceleration` | Hardware-accelerated decoding (`hw-accel`) |
 
 ### Test suites
 | Test file | Coverage |
@@ -83,6 +87,9 @@
 | `tests/error_handling.rs` | Error variants, context, invalid inputs, missing streams |
 | `tests/frame_iterator.rs` | FrameIterator, lazy iteration, early exit |
 | `tests/conversion.rs` | Remuxer, stream exclusion, lossless format conversion |
+| `tests/async_extraction.rs` | FrameStream, AudioFuture, async streaming (`async-tokio`) |
+| `tests/parallel_extraction.rs` | frames_parallel, sequential parity, interval mode (`parallel`) |
+| `tests/hw_accel.rs` | HW device enumeration, Auto/Software modes (`hw-accel`) |
 | `tests/validation.rs` | ValidationReport, warnings, errors, valid files |
 | `tests/scene_detection.rs` | Scene change detection, threshold configuration |
 | `tests/chapters.rs` | Chapter metadata extraction, titles, timestamps, ordering |
@@ -101,7 +108,7 @@
 - The `for_each_frame` method provides streaming frame processing without collecting into a `Vec`; prefer it when frames can be processed independently.
 - `FrameIterator` provides lazy iteration via `Iterator` trait; it owns a decoder and reads packets one at a time using `Packet::read(&mut Input)`.
 - Methods returning `_with_config` variants accept `ExtractionConfig` for progress/cancellation; the original methods delegate to these with default config.
-- Async methods (`frames_stream`, `extract_async`) open a fresh demuxer on a blocking thread and release the unbundler borrow immediately.
+- Async methods (`frame_stream`, `extract_async`) open a fresh demuxer on a blocking thread and release the unbundler borrow immediately.
 - Parallel extraction (`frames_parallel`) splits frame numbers into contiguous runs and processes each on a separate rayon thread with its own demuxer.
 - `FrameRange::Segments` resolves disjoint `(Duration, Duration)` time ranges into a sorted, deduplicated list of frame numbers, then delegates to `FrameRange::Specific`.
 - `frame_with_info` / `frames_with_info` return `(DynamicImage, FrameInfo)` pairs; `FrameInfo` carries frame number, timestamp, PTS, keyframe flag, and `FrameType`.
@@ -156,7 +163,7 @@ The following is a detailed prompt for any LLM (language model) working on the `
 **1.5 Config Threading**
 - `ExtractionConfig` carries progress callbacks, cancellation tokens, pixel format, resolution, and HW acceleration mode through extraction methods.
 - Methods named `*_with_config` accept `ExtractionConfig`; convenience methods without `_with_config` delegate with default config.
-- `FrameOutputConfig` controls pixel format (`OutputPixelFormat::Rgb8`/`Rgba8`/`Gray8`) and optional resolution settings.
+- `FrameOutputConfig` controls pixel format (`PixelFormat::Rgb8`/`Rgba8`/`Gray8`) and optional resolution settings.
 
 **1.6 Subtitle Decoding**
 - Subtitle decoding uses `decoder.decode(&packet, &mut subtitle)` — NOT `send_packet`/`receive_frame`.
@@ -210,10 +217,9 @@ The following is a detailed prompt for any LLM (language model) working on the `
 - Seeking is expensive; if frames are close together, decode through rather than seeking to each.
 
 **4.3 Pixel Format Conversion**
-- Output pixel format is configurable via `FrameOutputConfig` and `OutputPixelFormat` (defaults to `Rgb8`).
+- Output pixel format is configurable via `FrameOutputConfig` and `PixelFormat` (defaults to `Rgb8`).
 - Supported formats: `Rgb8`, `Rgba8`, `Gray8` — each produces the corresponding `DynamicImage` variant.
 - Use `frame_to_buffer(bytes_per_pixel)` from utilities for raw buffer extraction — handles row stride correctly.
-- The legacy `frame_to_rgb_buffer` is a thin wrapper around `frame_to_buffer(3)`.
 - Never copy planes directly without accounting for stride/padding.
 
 **4.4 Validation**
@@ -232,7 +238,7 @@ The following is a detailed prompt for any LLM (language model) working on the `
 - Prefer `frame_iter` when the caller needs control over iteration pace or wants to short-circuit.
 
 **4.6 Async and Parallel Extraction**
-- `frames_stream()` (feature `async-tokio`) returns a `FrameStream` implementing `tokio_stream::Stream`.
+- `frame_stream()` (feature `async-tokio`) returns a `FrameStream` implementing `tokio_stream::Stream`.
 - Async methods open a fresh demuxer on a `spawn_blocking` thread, releasing the unbundler borrow immediately.
 - `frames_parallel()` (feature `parallel`) distributes frame decoding across rayon threads, each with its own demuxer.
 - Parallel extraction splits frame numbers into contiguous runs (gap threshold = 30) for efficient sequential decoding per chunk.
@@ -388,7 +394,7 @@ use crate::audio::AudioFormat::*;                // NO!
 **DO NOT IMPORT: Freestanding functions — call them fully qualified:**
 ```rust
 // ✅ CORRECT — call with full crate path, no import
-let buffer = crate::utilities::frame_to_rgb_buffer(frame, width, height);
+let buffer = crate::utilities::frame_to_buffer(frame, width, height, 3);
 let ts = crate::utilities::duration_to_stream_timestamp(duration, time_base);
 let frame_num = crate::utilities::timestamp_to_frame_number(timestamp, fps);
 
@@ -397,10 +403,10 @@ let ptr: *mut u8 = std::ptr::null_mut();
 let ptr: *const u8 = std::ptr::null();
 
 // ❌ WRONG — never import freestanding functions or their parent modules
-use crate::utilities::frame_to_rgb_buffer;       // NO!
+use crate::utilities::frame_to_buffer;        // NO!
 use crate::utilities::*;                         // NO!
 use std::ptr;                                    // NO!
-frame_to_rgb_buffer(frame, width, height);       // NO! (unqualified call)
+frame_to_buffer(frame, width, height, 3);        // NO! (unqualified call)
 ptr::null_mut();                                 // NO! (module-qualified call)
 ```
 

@@ -1,7 +1,7 @@
 //! Subtitle extraction.
 //!
 //! This module provides [`SubtitleExtractor`] for extracting text-based
-//! subtitle tracks from media files, and [`SubtitleEntry`] for representing
+//! subtitle tracks from media files, and [`SubtitleEvent`] for representing
 //! individual subtitle events with timing information.
 //!
 //! # Example
@@ -33,7 +33,7 @@ use crate::unbundler::MediaUnbundler;
 
 /// A single subtitle event with timing and text content.
 #[derive(Debug, Clone)]
-pub struct SubtitleEntry {
+pub struct SubtitleEvent {
     /// When this subtitle starts displaying.
     pub start_time: Duration,
     /// When this subtitle stops displaying.
@@ -87,7 +87,7 @@ impl<'a> SubtitleExtractor<'a> {
 
     /// Extract all subtitle entries from the stream.
     ///
-    /// Returns a list of [`SubtitleEntry`] values sorted by start time.
+    /// Returns a list of [`SubtitleEvent`] values sorted by start time.
     ///
     /// # Errors
     ///
@@ -104,7 +104,7 @@ impl<'a> SubtitleExtractor<'a> {
     /// println!("Found {} subtitle entries", entries.len());
     /// # Ok::<(), unbundle::UnbundleError>(())
     /// ```
-    pub fn extract(&mut self) -> Result<Vec<SubtitleEntry>, UnbundleError> {
+    pub fn extract(&mut self) -> Result<Vec<SubtitleEvent>, UnbundleError> {
         let subtitle_stream_index = self.resolve_stream_index()?;
 
         let stream = self
@@ -182,7 +182,7 @@ impl<'a> SubtitleExtractor<'a> {
             }
 
             if !text_parts.is_empty() {
-                entries.push(SubtitleEntry {
+                entries.push(SubtitleEvent {
                     start_time,
                     end_time,
                     text: text_parts.join("\n"),
@@ -243,7 +243,7 @@ impl<'a> SubtitleExtractor<'a> {
 }
 
 /// Format subtitle entries into a string in the given format.
-fn format_subtitles(entries: &[SubtitleEntry], format: SubtitleFormat) -> String {
+fn format_subtitles(entries: &[SubtitleEvent], format: SubtitleFormat) -> String {
     let mut output = Vec::new();
 
     match format {

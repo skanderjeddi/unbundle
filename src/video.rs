@@ -19,7 +19,7 @@ use ffmpeg_next::{
 use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 
 use crate::{
-    config::{ExtractionConfig, FrameOutputConfig, OutputPixelFormat},
+    config::{ExtractionConfig, FrameOutputConfig, PixelFormat},
     error::UnbundleError,
     iterator::FrameIterator,
     metadata::VideoMetadata,
@@ -882,7 +882,7 @@ impl<'a> VideoExtractor<'a> {
 
     /// Create an async stream of decoded video frames.
     ///
-    /// Returns a [`FrameStream`](crate::stream::FrameStream) that
+    /// Returns a [`FrameStream`] that
     /// yields `(frame_number, DynamicImage)` pairs from a background
     /// blocking thread. The stream implements
     /// [`tokio_stream::Stream`] and can be used with `StreamExt`
@@ -907,7 +907,7 @@ impl<'a> VideoExtractor<'a> {
     /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
     /// let mut stream = unbundler
     ///     .video()
-    ///     .frames_stream(FrameRange::Range(0, 9), ExtractionConfig::new())?;
+    ///     .frame_stream(FrameRange::Range(0, 9), ExtractionConfig::new())?;
     ///
     /// while let Some(result) = stream.next().await {
     ///     let (frame_number, image) = result?;
@@ -917,7 +917,7 @@ impl<'a> VideoExtractor<'a> {
     /// # }
     /// ```
     #[cfg(feature = "async-tokio")]
-    pub fn frames_stream(
+    pub fn frame_stream(
         &mut self,
         range: FrameRange,
         config: ExtractionConfig,
@@ -939,7 +939,7 @@ impl<'a> VideoExtractor<'a> {
     /// Create a lazy iterator over decoded video frames.
     ///
     /// Unlike [`frames`](VideoExtractor::frames), which decodes everything
-    /// up-front, this returns a [`FrameIterator`](crate::iterator::FrameIterator)
+    /// up-front, this returns a [`FrameIterator`]
     /// that decodes one frame at a time on each [`next()`](Iterator::next)
     /// call. This is ideal when you want to stop early or process frames
     /// one by one without buffering the entire set.
@@ -2065,7 +2065,7 @@ fn create_video_decoder(
 ) -> Result<(VideoDecoder, bool), UnbundleError> {
     #[cfg(feature = "hw-accel")]
     {
-        let setup = crate::hwaccel::try_create_hw_decoder(codec_context, config.hw_accel)?;
+        let setup = crate::hw_accel::try_create_hw_decoder(codec_context, config.hw_accel)?;
         Ok((setup.decoder, setup.hw_active))
     }
     #[cfg(not(feature = "hw-accel"))]
@@ -2084,7 +2084,7 @@ fn maybe_transfer_hw_frame(
 ) -> Result<Option<VideoFrame>, UnbundleError> {
     #[cfg(feature = "hw-accel")]
     if hw_active {
-        match crate::hwaccel::transfer_hw_frame(frame) {
+        match crate::hw_accel::transfer_hw_frame(frame) {
             Ok(sw_frame) => return Ok(Some(sw_frame)),
             Err(_) => return Ok(None), // frame already in system memory
         }
@@ -2129,7 +2129,7 @@ fn convert_frame_to_image(
     output_config: &FrameOutputConfig,
 ) -> Result<DynamicImage, UnbundleError> {
     match output_config.pixel_format {
-        OutputPixelFormat::Rgb8 => {
+        PixelFormat::Rgb8 => {
             let buffer = crate::utilities::frame_to_buffer(frame, width, height, 3);
             let rgb_image = RgbImage::from_raw(width, height, buffer).ok_or_else(|| {
                 UnbundleError::VideoDecodeError(
@@ -2138,7 +2138,7 @@ fn convert_frame_to_image(
             })?;
             Ok(DynamicImage::ImageRgb8(rgb_image))
         }
-        OutputPixelFormat::Rgba8 => {
+        PixelFormat::Rgba8 => {
             let buffer = crate::utilities::frame_to_buffer(frame, width, height, 4);
             let rgba_image = RgbaImage::from_raw(width, height, buffer).ok_or_else(|| {
                 UnbundleError::VideoDecodeError(
@@ -2147,7 +2147,7 @@ fn convert_frame_to_image(
             })?;
             Ok(DynamicImage::ImageRgba8(rgba_image))
         }
-        OutputPixelFormat::Gray8 => {
+        PixelFormat::Gray8 => {
             let buffer = crate::utilities::frame_to_buffer(frame, width, height, 1);
             let gray_image = GrayImage::from_raw(width, height, buffer).ok_or_else(|| {
                 UnbundleError::VideoDecodeError(

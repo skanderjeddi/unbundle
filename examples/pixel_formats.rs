@@ -5,7 +5,7 @@
 
 use std::error::Error;
 
-use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler, OutputPixelFormat};
+use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler, PixelFormat};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ── RGB8 (default) ─────────────────────────────────────────────
     let config_rgb = ExtractionConfig::new()
-        .with_pixel_format(OutputPixelFormat::Rgb8);
+        .with_pixel_format(PixelFormat::Rgb8);
     let frames = unbundler
         .video()
         .frames_with_config(FrameRange::Range(0, 0), &config_rgb)?;
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ── RGBA8 ──────────────────────────────────────────────────────
     let config_rgba = ExtractionConfig::new()
-        .with_pixel_format(OutputPixelFormat::Rgba8);
+        .with_pixel_format(PixelFormat::Rgba8);
     let frames = unbundler
         .video()
         .frames_with_config(FrameRange::Range(0, 0), &config_rgba)?;
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ── Grayscale ──────────────────────────────────────────────────
     let config_gray = ExtractionConfig::new()
-        .with_pixel_format(OutputPixelFormat::Gray8);
+        .with_pixel_format(PixelFormat::Gray8);
     let frames = unbundler
         .video()
         .frames_with_config(FrameRange::Range(0, 0), &config_gray)?;

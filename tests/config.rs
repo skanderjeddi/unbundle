@@ -1,4 +1,4 @@
-//! ExtractionConfig, FrameOutputConfig, and OutputPixelFormat tests.
+//! ExtractionConfig, FrameOutputConfig, and PixelFormat tests.
 //!
 //! Tests require fixture files from `tests/fixtures/generate_fixtures.sh`.
 
@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use unbundle::{
-    ExtractionConfig, FrameRange, MediaUnbundler, OutputPixelFormat,
+    ExtractionConfig, FrameRange, MediaUnbundler, PixelFormat,
     ProgressCallback, ProgressInfo,
 };
 
@@ -40,7 +40,7 @@ fn config_with_batch_size_clamps_zero() {
     assert!(debug.contains("batch_size: 1"));
 }
 
-// ── OutputPixelFormat ──────────────────────────────────────────────
+// ── PixelFormat ──────────────────────────────────────────────
 
 #[test]
 fn frames_rgb8_default() {
@@ -51,7 +51,7 @@ fn frames_rgb8_default() {
 
     let mut unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
     let config = ExtractionConfig::new()
-        .with_pixel_format(OutputPixelFormat::Rgb8);
+        .with_pixel_format(PixelFormat::Rgb8);
     let frames = unbundler
         .video()
         .frames_with_config(FrameRange::Range(0, 0), &config)
@@ -74,7 +74,7 @@ fn frames_rgba8() {
 
     let mut unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
     let config = ExtractionConfig::new()
-        .with_pixel_format(OutputPixelFormat::Rgba8);
+        .with_pixel_format(PixelFormat::Rgba8);
     let frames = unbundler
         .video()
         .frames_with_config(FrameRange::Range(0, 0), &config)
@@ -96,7 +96,7 @@ fn frames_gray8() {
 
     let mut unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
     let config = ExtractionConfig::new()
-        .with_pixel_format(OutputPixelFormat::Gray8);
+        .with_pixel_format(PixelFormat::Gray8);
     let frames = unbundler
         .video()
         .frames_with_config(FrameRange::Range(0, 0), &config)
@@ -175,7 +175,7 @@ fn frames_fixed_resolution() {
 #[test]
 fn frame_output_config_defaults() {
     let config = unbundle::FrameOutputConfig::default();
-    assert_eq!(config.pixel_format, OutputPixelFormat::Rgb8);
+    assert_eq!(config.pixel_format, PixelFormat::Rgb8);
     assert!(config.width.is_none());
     assert!(config.height.is_none());
     assert!(config.maintain_aspect_ratio);

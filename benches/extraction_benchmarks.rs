@@ -11,7 +11,7 @@ use criterion::Criterion;
 use ffmpeg_next::util::log::Level as LogLevel;
 use unbundle::{
     AudioFormat, ExtractionConfig, FrameRange, MediaUnbundler,
-    OutputPixelFormat, Remuxer,
+    PixelFormat, Remuxer,
 };
 
 #[cfg(feature = "hw-accel")]
@@ -103,7 +103,7 @@ fn benchmark_pixel_formats(criterion: &mut Criterion) {
         bencher.iter(|| {
             let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
             let config = ExtractionConfig::new()
-                .with_pixel_format(OutputPixelFormat::Rgba8);
+                .with_pixel_format(PixelFormat::Rgba8);
             let _frames = unbundler
                 .video()
                 .frames_with_config(FrameRange::Range(0, 0), &config)
@@ -115,7 +115,7 @@ fn benchmark_pixel_formats(criterion: &mut Criterion) {
         bencher.iter(|| {
             let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
             let config = ExtractionConfig::new()
-                .with_pixel_format(OutputPixelFormat::Gray8);
+                .with_pixel_format(PixelFormat::Gray8);
             let _frames = unbundler
                 .video()
                 .frames_with_config(FrameRange::Range(0, 0), &config)
@@ -324,14 +324,14 @@ fn benchmark_async(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("async");
     group.sample_size(30);
 
-    group.bench_function("frames_stream 10 frames", |bencher| {
+    group.bench_function("frame_stream 10 frames", |bencher| {
         bencher.iter(|| {
             rt.block_on(async {
                 let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
                 let config = ExtractionConfig::new();
                 let mut stream = unbundler
                     .video()
-                    .frames_stream(FrameRange::Range(0, 9), config)
+                    .frame_stream(FrameRange::Range(0, 9), config)
                     .unwrap();
 
                 use tokio_stream::StreamExt;

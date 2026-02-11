@@ -78,7 +78,6 @@ pub enum HwDeviceType {
 
 impl HwDeviceType {
     /// Convert to the FFmpeg `AVHWDeviceType` constant.
-    #[allow(dead_code)]
     fn to_av_hw_device_type(self) -> AVHWDeviceType {
         match self {
             HwDeviceType::Cuda => AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA,
@@ -241,7 +240,6 @@ pub(crate) fn transfer_hw_frame(hw_frame: &VideoFrame) -> Result<VideoFrame, Unb
 }
 
 /// Find the best hardware device type supported by the codec.
-#[allow(dead_code)]
 fn find_best_hw_device_for_codec(codec_context: &CodecContext) -> Option<AVHWDeviceType> {
     let codec_ptr = unsafe { (*codec_context.as_ptr()).codec };
     if codec_ptr.is_null() {
@@ -276,7 +274,6 @@ fn find_best_hw_device_for_codec(codec_context: &CodecContext) -> Option<AVHWDev
 }
 
 /// Check whether a codec supports a specific HW device type.
-#[allow(dead_code)]
 fn codec_supports_hw_type(
     codec_context: &CodecContext,
     device_type: AVHWDeviceType,
@@ -312,7 +309,6 @@ fn codec_supports_hw_type(
 /// Create an FFmpeg HW device context.
 ///
 /// Returns a raw `AVBufferRef*` that must be freed with `av_buffer_unref`.
-#[allow(dead_code)]
 fn create_hw_device_context(
     device_type: AVHWDeviceType,
 ) -> Result<*mut AVBufferRef, UnbundleError> {

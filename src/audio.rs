@@ -891,7 +891,7 @@ impl<'a> AudioExtractor<'a> {
 
     /// Extract the complete audio track asynchronously.
     ///
-    /// Returns an [`AudioFuture`](crate::stream::AudioFuture) that
+    /// Returns an [`AudioFuture`] that
     /// resolves to the encoded audio bytes. The actual transcoding runs on
     /// a blocking thread so the async runtime is not starved.
     ///

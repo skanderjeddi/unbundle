@@ -56,7 +56,7 @@ text, powered by FFmpeg via
 
 ```toml
 [dependencies]
-unbundle = { version = "1.1", features = ["full"] }
+unbundle = { version = "2.0.1", features = ["full"] }
 ```
 
 ## Installation
@@ -65,7 +65,7 @@ Add `unbundle` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "1.1"
+unbundle = "2.0"
 ```
 
 ### System Requirements
@@ -198,10 +198,10 @@ use unbundle::{MediaUnbundler, SubtitleFormat};
 
 let mut unbundler = MediaUnbundler::open("input.mkv")?;
 
-// Extract subtitle entries with timing
-let entries = unbundler.subtitle().extract()?;
-for entry in &entries {
-    println!("[{:?} → {:?}] {}", entry.start_time, entry.end_time, entry.text);
+// Extract subtitle events with timing
+let events = unbundler.subtitle().extract()?;
+for event in &events {
+    println!("[{:?} → {:?}] {}", event.start_time, event.end_time, event.text);
 }
 
 // Save as SRT file
@@ -257,11 +257,11 @@ let frames = unbundler.video().frames_with_config(
 ### Custom Output Format
 
 ```rust
-use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler, OutputPixelFormat};
+use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler, PixelFormat};
 
 let config = ExtractionConfig::new()
-    .with_pixel_format(OutputPixelFormat::Rgba8)
-    .with_resolution(1280, 720);
+    .with_pixel_format(PixelFormat::Rgba8)
+    .with_resolution(Some(1280), Some(720));
 
 let mut unbundler = MediaUnbundler::open("input.mp4")?;
 let frames = unbundler.video().frames_with_config(
@@ -398,7 +398,10 @@ See the [API docs](https://docs.rs/unbundle) for complete documentation.
 | `FrameIterator` | Lazy, pull-based frame iterator |
 | `AudioFormat` | Output audio format (WAV, MP3, FLAC, AAC) |
 | `SubtitleFormat` | Output subtitle format (SRT, WebVTT, Raw) |
+| `SubtitleEvent` | A single decoded subtitle event (text, start/end time) |
 | `ExtractionConfig` | Threading progress callbacks, cancellation, pixel format, resolution, HW accel |
+| `FrameOutputConfig` | Pixel format and resolution settings for frame output |
+| `PixelFormat` | Output pixel format (RGB8, RGBA8, GRAY8) |
 | `ValidationReport` | Result of media file validation |
 | `MediaMetadata` | Container-level metadata (duration, format) |
 | `VideoMetadata` | Video stream metadata (dimensions, frame rate, codec) |
@@ -444,6 +447,10 @@ See the [`examples/`](https://github.com/skanderjeddi/unbundle/tree/main/example
 | `subtitles` | Extract subtitles as SRT/WebVTT/raw text |
 | `remux` | Lossless container format conversion |
 | `validate` | Media file validation report |
+| `async_extraction` | Async frame streaming and audio extraction (`async-tokio`) |
+| `parallel_extraction` | Parallel frame extraction across threads (`parallel`) |
+| `scene_detection` | Scene change detection (`scene-detection`) |
+| `hw_acceleration` | Hardware-accelerated decoding (`hw-accel`) |
 
 Run an example:
 
@@ -508,6 +515,9 @@ cargo test --all-features
 | `segmented_extraction` | FrameRange::Segments, multiple disjoint time ranges |
 | `probing` | MediaProbe, probe/probe_many, error handling |
 | `thumbnail` | ThumbnailGenerator, grid, smart selection, aspect ratio |
+| `async_extraction` | FrameStream, AudioFuture, async streaming (`async-tokio`) |
+| `parallel_extraction` | frames_parallel, sequential parity, interval mode (`parallel`) |
+| `hw_accel` | HW device enumeration, Auto/Software modes (`hw-accel`) |
 
 ## Benchmarks
 

@@ -2,8 +2,8 @@
 //!
 //! `MediaUnbundler` is the main entry point for the crate. It opens a media
 //! file, extracts and caches metadata, and provides access to
-//! [`VideoExtractor`](crate::video::VideoExtractor) and
-//! [`AudioExtractor`](crate::audio::AudioExtractor) for frame and audio
+//! [`VideoExtractor`] and
+//! [`AudioExtractor`] for frame and audio
 //! extraction respectively.
 
 use std::{

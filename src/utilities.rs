@@ -7,16 +7,6 @@ use std::time::Duration;
 
 use ffmpeg_next::{frame::Video as VideoFrame, Rational};
 
-/// Copy pixel data from an FFmpeg video frame into a tightly-packed RGB buffer.
-///
-/// FFmpeg frames frequently carry per-row padding (stride > width × 3).
-/// This function strips that padding so the result can be passed directly to
-/// [`image::RgbImage::from_raw`].
-#[allow(dead_code)]
-pub fn frame_to_rgb_buffer(video_frame: &VideoFrame, width: u32, height: u32) -> Vec<u8> {
-    frame_to_buffer(video_frame, width, height, 3)
-}
-
 /// Copy pixel data from an FFmpeg video frame into a tightly-packed buffer.
 ///
 /// `bytes_per_pixel` is the number of bytes per pixel for the output format

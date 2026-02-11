@@ -33,14 +33,14 @@ use ffmpeg_next::format::Pixel;
 use crate::progress::{CancellationToken, NoOpProgress, ProgressCallback};
 
 #[cfg(feature = "hw-accel")]
-use crate::hwaccel::HwAccelMode;
+use crate::hw_accel::HwAccelMode;
 
 /// Output pixel format for extracted frames.
 ///
 /// Controls the colour model and depth of the [`image::DynamicImage`] values
 /// returned by video extraction methods.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum OutputPixelFormat {
+pub enum PixelFormat {
     /// 8-bit RGB (24 bpp). This is the default.
     #[default]
     Rgb8,
@@ -50,23 +50,13 @@ pub enum OutputPixelFormat {
     Gray8,
 }
 
-impl OutputPixelFormat {
+impl PixelFormat {
     /// Map to the corresponding FFmpeg pixel format constant.
     pub(crate) fn to_ffmpeg_pixel(self) -> Pixel {
         match self {
-            OutputPixelFormat::Rgb8 => Pixel::RGB24,
-            OutputPixelFormat::Rgba8 => Pixel::RGBA,
-            OutputPixelFormat::Gray8 => Pixel::GRAY8,
-        }
-    }
-
-    /// Number of bytes per pixel.
-    #[allow(dead_code)]
-    pub(crate) fn bytes_per_pixel(self) -> usize {
-        match self {
-            OutputPixelFormat::Rgb8 => 3,
-            OutputPixelFormat::Rgba8 => 4,
-            OutputPixelFormat::Gray8 => 1,
+            PixelFormat::Rgb8 => Pixel::RGB24,
+            PixelFormat::Rgba8 => Pixel::RGBA,
+            PixelFormat::Gray8 => Pixel::GRAY8,
         }
     }
 }
@@ -80,7 +70,7 @@ impl OutputPixelFormat {
 #[derive(Debug, Clone)]
 pub struct FrameOutputConfig {
     /// Output pixel format.
-    pub pixel_format: OutputPixelFormat,
+    pub pixel_format: PixelFormat,
     /// Target width. `None` keeps the source width.
     pub width: Option<u32>,
     /// Target height. `None` keeps the source height.
@@ -93,7 +83,7 @@ pub struct FrameOutputConfig {
 impl Default for FrameOutputConfig {
     fn default() -> Self {
         Self {
-            pixel_format: OutputPixelFormat::Rgb8,
+            pixel_format: PixelFormat::Rgb8,
             width: None,
             height: None,
             maintain_aspect_ratio: true,
@@ -213,7 +203,7 @@ impl ExtractionConfig {
 
     /// Set the output pixel format for extracted frames.
     #[must_use]
-    pub fn with_pixel_format(mut self, format: OutputPixelFormat) -> Self {
+    pub fn with_pixel_format(mut self, format: PixelFormat) -> Self {
         self.frame_output.pixel_format = format;
         self
     }
@@ -248,7 +238,7 @@ impl ExtractionConfig {
     /// Set the hardware acceleration mode.
     ///
     /// Only available when the `hw-accel` feature is enabled.
-    /// Defaults to [`HwAccelMode::Auto`](crate::hwaccel::HwAccelMode::Auto).
+    /// Defaults to [`HwAccelMode::Auto`].
     #[cfg(feature = "hw-accel")]
     #[must_use]
     pub fn with_hw_accel(mut self, mode: HwAccelMode) -> Self {

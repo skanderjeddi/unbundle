@@ -1,6 +1,6 @@
 [package]
 name = "unbundle"
-version = "1.1.0"
+version = "2.0.1"
 edition = "2024"
 authors = ["Skander Jeddi <skanderjeddi@fastmail.com>"]
 description = "Unbundle media files - extract still frames, audio tracks, and subtitles from video files"
@@ -44,6 +44,22 @@ image = "0.25"
 tempfile = "3.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-stream = "0.1"
+
+[[example]]
+name = "async_extraction"
+required-features = ["async-tokio"]
+
+[[example]]
+name = "parallel_extraction"
+required-features = ["parallel"]
+
+[[example]]
+name = "scene_detection"
+required-features = ["scene-detection"]
+
+[[example]]
+name = "hw_acceleration"
+required-features = ["hw-accel"]
 
 [[bench]]
 name = "extraction_benchmarks"

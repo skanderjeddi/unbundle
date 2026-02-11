@@ -33,7 +33,7 @@ use ffmpeg_next::{
 };
 use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 
-use crate::config::{FrameOutputConfig, OutputPixelFormat};
+use crate::config::{FrameOutputConfig, PixelFormat};
 use crate::error::UnbundleError;
 use crate::unbundler::MediaUnbundler;
 
@@ -145,7 +145,7 @@ impl<'a> FrameIterator<'a> {
         let height = self.target_height;
 
         match self.output_config.pixel_format {
-            OutputPixelFormat::Rgb8 => {
+            PixelFormat::Rgb8 => {
                 let buf =
                     crate::utilities::frame_to_buffer(&self.scaled_frame, width, height, 3);
                 let img = RgbImage::from_raw(width, height, buf).ok_or_else(|| {
@@ -155,7 +155,7 @@ impl<'a> FrameIterator<'a> {
                 })?;
                 Ok(DynamicImage::ImageRgb8(img))
             }
-            OutputPixelFormat::Rgba8 => {
+            PixelFormat::Rgba8 => {
                 let buf =
                     crate::utilities::frame_to_buffer(&self.scaled_frame, width, height, 4);
                 let img = RgbaImage::from_raw(width, height, buf).ok_or_else(|| {
@@ -165,7 +165,7 @@ impl<'a> FrameIterator<'a> {
                 })?;
                 Ok(DynamicImage::ImageRgba8(img))
             }
-            OutputPixelFormat::Gray8 => {
+            PixelFormat::Gray8 => {
                 let buf =
                     crate::utilities::frame_to_buffer(&self.scaled_frame, width, height, 1);
                 let img = GrayImage::from_raw(width, height, buf).ok_or_else(|| {

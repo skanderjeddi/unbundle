@@ -21,7 +21,7 @@
 //! let config = ExtractionConfig::new();
 //! let mut stream = unbundler
 //!     .video()
-//!     .frames_stream(FrameRange::Range(0, 9), config)?;
+//!     .frame_stream(FrameRange::Range(0, 9), config)?;
 //!
 //! while let Some(result) = stream.next().await {
 //!     let (frame_number, image) = result?;
@@ -75,7 +75,7 @@ const DEFAULT_CHANNEL_CAPACITY: usize = 8;
 /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
 /// let mut stream = unbundler
 ///     .video()
-///     .frames_stream(FrameRange::Interval(30), ExtractionConfig::new())?;
+///     .frame_stream(FrameRange::Interval(30), ExtractionConfig::new())?;
 ///
 /// while let Some(result) = stream.next().await {
 ///     let (frame_number, image) = result?;

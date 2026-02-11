@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use unbundle::{FrameOutputConfig, FrameRange, MediaUnbundler, OutputPixelFormat};
+use unbundle::{FrameOutputConfig, FrameRange, MediaUnbundler, PixelFormat};
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -123,7 +123,7 @@ fn frame_iter_with_config_pixel_format() {
     }
 
     let config = FrameOutputConfig {
-        pixel_format: OutputPixelFormat::Gray8,
+        pixel_format: PixelFormat::Gray8,
         ..FrameOutputConfig::default()
     };
 

@@ -1,6 +1,6 @@
 //! Media file validation.
 //!
-//! Provides [`MediaUnbundler::validate`] which inspects a media file and
+//! Provides [`crate::MediaUnbundler::validate`] which inspects a media file and
 //! returns a [`ValidationReport`] describing its structure and any potential
 //! issues.
 //!
