@@ -1,0 +1,22 @@
+[package]
+name = "unbundle"
+version = "0.1.0"
+edition = "2024"
+description = "Unbundle media files - extract still frames and audio from video files"
+license = "MIT"
+keywords = ["video", "audio", "ffmpeg", "extraction", "media"]
+categories = ["multimedia", "multimedia::video", "multimedia::audio"]
+
+[dependencies]
+ffmpeg-next = "8"
+ffmpeg-sys-next = "8"
+image = "0.25"
+thiserror = "2.0"
+
+[dev-dependencies]
+criterion = "0.5"
+tempfile = "3.0"
+
+[[bench]]
+name = "extraction_benchmarks"
+harness = false
