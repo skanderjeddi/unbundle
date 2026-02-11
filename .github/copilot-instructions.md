@@ -2,37 +2,58 @@
 
 ## Big picture architecture
 - `MediaUnbundler` is the main entry point; it opens the media file, caches `MediaMetadata`, and stores stream indexes. See [src/unbundler.rs](../src/unbundler.rs).
-- `VideoExtractor` and `AudioExtractor` are lightweight, short-lived views that borrow the unbundler mutably; you cannot hold audio and video extractors at the same time. See [src/video.rs](../src/video.rs) and [src/audio.rs](../src/audio.rs).
+- `VideoExtractor`, `AudioExtractor`, and `SubtitleExtractor` are lightweight, short-lived views that borrow the unbundler mutably; you cannot hold multiple extractors at the same time. See [src/video.rs](../src/video.rs), [src/audio.rs](../src/audio.rs), and [src/subtitle.rs](../src/subtitle.rs).
 - Video decoding always creates a fresh decoder per call, seeks to a keyframe, then decodes forward. Frame selection is centralized in `FrameRange`, with range/interval/time-based variants. See [src/video.rs](../src/video.rs).
 - Audio extraction can target files or memory; in-memory output uses FFmpeg dynamic buffer I/O via `ffmpeg_sys_next`. See [src/audio.rs](../src/audio.rs).
+- Subtitle extraction decodes text-based subtitle tracks and can export to SRT, WebVTT, or raw text. See [src/subtitle.rs](../src/subtitle.rs).
 - Shared timestamp and pixel-buffer helpers live in [src/utilities.rs](../src/utilities.rs); most conversions go through these helpers rather than inline math.
-- All fallible operations return `UnbundleError`; error variants carry context like file paths, frame numbers, and timestamps. See [src/error.rs](../src/error.rs).
+- All fallible operations return `UnbundleError`; error variants carry context like file paths, frame numbers, and timestamps. The error enum is `#[non_exhaustive]`. See [src/error.rs](../src/error.rs).
+- `ExtractionConfig` threads progress callbacks, cancellation tokens, pixel format, and resolution settings through extraction methods. See [src/config.rs](../src/config.rs).
+- `ProgressCallback` (infallible, `Send + Sync`) and `CancellationToken` (`Arc<AtomicBool>`) provide cooperative progress/cancellation. See [src/progress.rs](../src/progress.rs).
+- `FrameIterator` provides lazy, pull-based frame iteration using `Packet::read` for packet-level control. See [src/iterator.rs](../src/iterator.rs).
+- `Remuxer` performs lossless container format conversion without re-encoding. See [src/convert.rs](../src/convert.rs).
+- `ValidationReport` inspects cached metadata for potential issues. See [src/validation.rs](../src/validation.rs).
+
+### Feature-gated modules
+- `async-tokio`: `FrameStream` (background decode thread → mpsc channel → `tokio_stream::Stream`) and `AudioFuture` for non-blocking extraction. See [src/stream.rs](../src/stream.rs).
+- `parallel`: `frames_parallel()` distributes frame decoding across rayon threads, each with its own demuxer. See [src/parallel.rs](../src/parallel.rs).
+- `hw-accel`: `HwAccelMode`, `HwDeviceType`, and helpers for FFmpeg hardware-accelerated decoding via `ffmpeg_sys_next`. See [src/hwaccel.rs](../src/hwaccel.rs).
+- `scene-detection`: `SceneChange` and `SceneDetectionConfig` using FFmpeg's `scdet` filter. See [src/scene.rs](../src/scene.rs).
 
 ## Developer workflows
 - Build: `cargo build` (FFmpeg dev libraries must be installed; see README).
-- Tests: generate fixtures first (`tests/fixtures/generate_fixtures.sh` or `.bat`), then run `cargo test`. See [README.md](../README.md).
+- Build with all features: `cargo build --all-features`.
+- Tests: generate fixtures first (`tests/fixtures/generate_fixtures.sh` or `.bat`), then run `cargo test`.
 - Examples: `cargo run --example <name> -- path/to/video.mp4`; example entry points live in [examples/](../examples/).
 - Benchmarks: `cargo bench` runs Criterion benchmarks in [benches/](../benches/).
 
 ## Project-specific conventions and patterns
 - Metadata is extracted once at open; avoid recomputing stream properties if `MediaMetadata` already provides them.
+- `MediaMetadata` includes `audio_tracks: Option<Vec<AudioMetadata>>` and `subtitle_tracks: Option<Vec<SubtitleMetadata>>` for multi-track access.
 - Frame selection logic prefers sequential decoding when possible; `FrameRange::Specific` sorts/dedups inputs to minimize seeks.
 - Timestamp validation is done against `MediaMetadata.duration`; follow this pattern in new range-based APIs.
-- Frame conversion expects RGB24 with row-stride handling via `frame_to_rgb_buffer` rather than direct plane copies.
+- Frame conversion uses `frame_to_buffer(bytes_per_pixel)` from utilities with row-stride handling; `FrameOutputConfig` controls pixel format (RGB8/RGBA8/GRAY8) and resolution.
 - Audio code uses a `PacketWriter` trait to abstract in-memory vs file output; add new output targets by implementing this trait.
 - The `for_each_frame` method provides streaming frame processing without collecting into a `Vec`; prefer it when frames can be processed independently.
+- `FrameIterator` provides lazy iteration via `Iterator` trait; it owns a decoder and reads packets one at a time using `Packet::read(&mut Input)`.
+- Methods returning `_with_config` variants accept `ExtractionConfig` for progress/cancellation; the original methods delegate to these with default config.
+- Async methods (`frames_stream`, `extract_async`) open a fresh demuxer on a blocking thread and release the unbundler borrow immediately.
+- Parallel extraction (`frames_parallel`) splits frame numbers into contiguous runs and processes each on a separate rayon thread with its own demuxer.
 
 ## Coding conventions
 - Public APIs return `Result<T, UnbundleError>` and convert upstream FFmpeg/image errors into `UnbundleError` variants (see [src/error.rs](../src/error.rs)).
 - Prefer `MediaUnbundler::metadata()` for stream properties instead of re-reading codec parameters; only decode when needed (see [src/unbundler.rs](../src/unbundler.rs)).
 - Use the utilities helpers for timestamp and PTS math rather than inline conversions (see [src/utilities.rs](../src/utilities.rs)).
-- Video extraction should build a fresh decoder per call, seek using stream time base, and convert to RGB24 via `frame_to_rgb_buffer` (see [src/video.rs](../src/video.rs)).
+- Video extraction should build a fresh decoder per call, seek using stream time base, and convert via `frame_to_buffer` / `convert_frame_to_image` (see [src/video.rs](../src/video.rs)).
 - Audio in-memory encoding uses FFmpeg dynamic buffer I/O (`avio_open_dyn_buf`/`avio_close_dyn_buf`) via `ffmpeg_sys_next` (see [src/audio.rs](../src/audio.rs)).
+- Subtitle decoding uses `avcodec_decode_subtitle2` via `decoder.decode(&packet, &mut subtitle)` — NOT `send_packet`/`receive_frame` (see [src/subtitle.rs](../src/subtitle.rs)).
+- Feature-gated code uses `#[cfg(feature = "feature-name")]` on both module declarations in `lib.rs` and on public methods/types.
 
 ## Integrations and dependencies
 - FFmpeg is required at build/runtime and accessed through `ffmpeg-next` and `ffmpeg-sys-next`; use those crates for all media I/O and encoding.
 - `image` is used for `DynamicImage` outputs; avoid introducing alternative image types unless required.
 - Errors should be mapped into `UnbundleError` variants instead of bubbling raw FFmpeg errors.
+- Optional dependencies: `tokio`/`tokio-stream`/`futures-core` (async), `rayon`/`crossbeam-channel` (parallel).
 
 ---
 
@@ -47,7 +68,7 @@ The following is a detailed prompt for any LLM (language model) working on the `
 - When opening a file, metadata is extracted and cached immediately. Do NOT re-extract metadata; always use `unbundler.metadata()`.
 
 **1.2 Extractor Borrowing**
-- `VideoExtractor` and `AudioExtractor` are short-lived, mutable borrows of `MediaUnbundler`.
+- `VideoExtractor`, `AudioExtractor`, and `SubtitleExtractor` are short-lived, mutable borrows of `MediaUnbundler`.
 - You CANNOT hold both extractors simultaneously — this is enforced by Rust's borrow checker.
 - Pattern: `unbundler.video().frame(0)` or `unbundler.audio().extract(...)` — call, use, drop.
 
@@ -61,6 +82,21 @@ The following is a detailed prompt for any LLM (language model) working on the `
 - Never write to a temp file and read it back for in-memory output.
 - The `PacketWriter` trait abstracts packet writing for both output targets; `MemoryPacketWriter` (unsafe, raw `AVFormatContext`) and `FilePacketWriter` (safe, `Output`) implement it.
 - When adding new audio output targets, implement the `PacketWriter` trait in `src/audio.rs`.
+
+**1.5 Config Threading**
+- `ExtractionConfig` carries progress callbacks, cancellation tokens, pixel format, resolution, and HW acceleration mode through extraction methods.
+- Methods named `*_with_config` accept `ExtractionConfig`; convenience methods without `_with_config` delegate with default config.
+- `FrameOutputConfig` controls pixel format (`OutputPixelFormat::Rgb8`/`Rgba8`/`Gray8`) and optional resolution settings.
+
+**1.6 Subtitle Decoding**
+- Subtitle decoding uses `decoder.decode(&packet, &mut subtitle)` — NOT `send_packet`/`receive_frame`.
+- Handles `Rect::Text` and `Rect::Ass` subtitle formats; `Rect::Bitmap` subtitles are skipped.
+- ASS tags are stripped via `strip_ass_tags()` to produce clean text output.
+
+**1.7 Format Conversion (Remuxing)**
+- `Remuxer` performs lossless container format conversion (no re-encoding).
+- Uses `encoder::find(Id::None)` for stream copy mode and resets `codec_tag` for muxer compatibility.
+- Builder pattern: `exclude_video()`, `exclude_audio()`, `exclude_subtitles()` to selectively omit streams.
 
 ### 2. Error Handling Rules
 
@@ -104,8 +140,10 @@ The following is a detailed prompt for any LLM (language model) working on the `
 - Seeking is expensive; if frames are close together, decode through rather than seeking to each.
 
 **4.3 Pixel Format Conversion**
-- Output frames are ALWAYS RGB24 format.
-- Use `frame_to_rgb_buffer` from utilities for conversion — handles row stride correctly.
+- Output pixel format is configurable via `FrameOutputConfig` and `OutputPixelFormat` (defaults to `Rgb8`).
+- Supported formats: `Rgb8`, `Rgba8`, `Gray8` — each produces the corresponding `DynamicImage` variant.
+- Use `frame_to_buffer(bytes_per_pixel)` from utilities for raw buffer extraction — handles row stride correctly.
+- The legacy `frame_to_rgb_buffer` is a thin wrapper around `frame_to_buffer(3)`.
 - Never copy planes directly without accounting for stride/padding.
 
 **4.4 Validation**
@@ -117,8 +155,17 @@ The following is a detailed prompt for any LLM (language model) working on the `
 **4.5 Streaming vs Collecting**
 - `frames()` collects all decoded frames into a `Vec<DynamicImage>`.
 - `for_each_frame()` processes frames one at a time via a callback without collecting.
-- Both share the same internal decode logic via `process_frame_range` and `process_specific_frames`.
+- `frame_iter()` returns a `FrameIterator` for lazy, pull-based iteration via Rust's `Iterator` trait.
+- Both `frames()` and `for_each_frame()` share the same internal decode logic via `process_frame_range` and `process_specific_frames`.
+- `FrameIterator` uses `Packet::read(&mut Input)` for packet-level control, avoiding the borrow conflict with `packets()` iterator.
 - Prefer `for_each_frame` when frames can be processed independently (e.g. saving to disk).
+- Prefer `frame_iter` when the caller needs control over iteration pace or wants to short-circuit.
+
+**4.6 Async and Parallel Extraction**
+- `frames_stream()` (feature `async-tokio`) returns a `FrameStream` implementing `tokio_stream::Stream`.
+- Async methods open a fresh demuxer on a `spawn_blocking` thread, releasing the unbundler borrow immediately.
+- `frames_parallel()` (feature `parallel`) distributes frame decoding across rayon threads, each with its own demuxer.
+- Parallel extraction splits frame numbers into contiguous runs (gap threshold = 30) for efficient sequential decoding per chunk.
 
 ### 5. Audio Extraction Rules
 
@@ -141,9 +188,11 @@ The following is a detailed prompt for any LLM (language model) working on the `
 - Never re-read codec parameters or stream info if `MediaMetadata` provides it.
 
 **6.2 Optional Streams**
-- `metadata.video` and `metadata.audio` are `Option<T>` — files may have only video or only audio.
+- `metadata.video`, `metadata.audio`, and `metadata.subtitle` are `Option<T>` — files may lack any stream type.
+- `metadata.audio_tracks` and `metadata.subtitle_tracks` are `Option<Vec<T>>` for multi-track access.
 - Always check for `None` before accessing stream-specific properties.
-- Return `UnbundleError::NoVideoStream` or `UnbundleError::NoAudioStream` when the required stream is missing.
+- Return `UnbundleError::NoVideoStream`, `UnbundleError::NoAudioStream`, or `UnbundleError::NoSubtitleStream` when the required stream is missing.
+- Use `unbundler.audio_track(index)` and `unbundler.subtitle_track(index)` for multi-track extraction.
 
 ### 7. Dependency Rules
 
@@ -313,7 +362,44 @@ criterion_group!(benches, bench_fn);  // NO! (unqualified call)
 - Tests should skip gracefully if fixtures are missing (check with `Path::new(...).exists()`).
 - Benchmarks use Criterion and live in `benches/`.
 
-### 9. Summary Checklist
+### 9. Feature-Gated Code Rules
+
+**9.1 Feature Flags**
+- Feature-gated code uses `#[cfg(feature = "feature-name")]` on both module declarations in `lib.rs` and on public methods/types.
+- Available features: `async-tokio`, `parallel`, `hw-accel`, `scene-detection`, `full` (enables all).
+- Default features are empty — the crate compiles with no optional dependencies by default.
+
+**9.2 Async (`async-tokio`)**
+- `FrameStream` wraps `mpsc::Receiver` + `JoinHandle`, implements `tokio_stream::Stream`.
+- `AudioFuture` wraps `JoinHandle`, implements `std::future::Future`.
+- Async methods open a fresh demuxer on a blocking thread; the unbundler borrow is released immediately.
+
+**9.3 Parallel (`parallel`)**
+- `frames_parallel()` splits frame numbers into contiguous runs and processes each on a rayon thread.
+- Each thread opens its own `MediaUnbundler` instance to avoid `Send`/`Sync` issues with `Input`.
+
+**9.4 HW Acceleration (`hw-accel`)**
+- `HwAccelMode` and `HwDeviceType` control hardware-accelerated decoding.
+- Uses unsafe `ffmpeg_sys_next` for `av_hwdevice_ctx_create`, `av_hwframe_transfer_data`, etc.
+- `ExtractionConfig::with_hw_accel()` threads HW mode through extraction methods.
+
+**9.5 Scene Detection (`scene-detection`)**
+- Uses FFmpeg's `scdet` filter graph for scene change detection.
+- Reads `lavfi.scd.score` from frame side data via unsafe `av_dict_get`.
+
+### 10. Validation and Conversion Rules
+
+**10.1 Validation**
+- `ValidationReport` inspects cached metadata for potential issues (no additional I/O).
+- Reports are categorized into info, warnings, and errors.
+- `is_valid()` returns true only when the errors list is empty.
+
+**10.2 Remuxing**
+- `Remuxer` copies packets without re-encoding — timestamps are rescaled between stream time bases.
+- Always reset `codec_tag` to 0 to let the output muxer choose the correct tag.
+- Use builder methods to selectively exclude video, audio, or subtitle streams.
+
+### 11. Summary Checklist
 
 When writing or reviewing code for `unbundle`, verify:
 
@@ -322,7 +408,11 @@ When writing or reviewing code for `unbundle`, verify:
 - [ ] Timestamp math uses `utilities.rs` helpers, not inline calculations
 - [ ] Frame extraction creates a fresh decoder per call
 - [ ] Metadata is accessed via `unbundler.metadata()`, not re-extracted
-- [ ] Frame output uses RGB24 via `frame_to_rgb_buffer`
-- [ ] Optional streams (`video`/`audio`) are checked before use
+- [ ] Frame output respects `FrameOutputConfig` (pixel format, resolution)
+- [ ] Optional streams (`video`/`audio`/`subtitle`) are checked before use
 - [ ] No raw FFmpeg errors are returned to callers
 - [ ] Doc comments exist for all public items
+- [ ] Feature-gated code has `#[cfg(feature = "...")]` on both modules and public items
+- [ ] `_with_config` variants accept `ExtractionConfig`; convenience methods delegate with defaults
+- [ ] Async/parallel operations open fresh demuxers, not shared contexts
+- [ ] Cancellation checks appear in all decode loops

@@ -3,11 +3,12 @@
 //! Usage:
 //!   cargo run --example extract_frames -- <input_file>
 
+use std::error::Error;
 use std::time::Duration;
 
 use unbundle::{FrameRange, MediaUnbundler};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "input.mp4".to_string());
@@ -43,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Extracting every 30th frame...");
     let frames = unbundler.video().frames(FrameRange::Interval(30))?;
     for (index, frame) in frames.iter().enumerate() {
-        let filename = std::format!("frame_interval_{index}.png");
+        let filename = format!("frame_interval_{index}.png");
         frame.save(&filename)?;
     }
     println!("Saved {} interval frames", frames.len());
@@ -54,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .video()
         .frames(FrameRange::Specific(vec![0, 50, 100]))?;
     for (index, frame) in frames.iter().enumerate() {
-        let filename = std::format!("frame_specific_{index}.png");
+        let filename = format!("frame_specific_{index}.png");
         frame.save(&filename)?;
     }
     println!("Saved {} specific frames", frames.len());

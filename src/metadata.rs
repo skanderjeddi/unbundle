@@ -21,14 +21,26 @@ use std::time::Duration;
 /// let metadata = unbundler.metadata();
 /// println!("Duration: {:?}", metadata.duration);
 /// println!("Format: {}", metadata.format);
+/// if let Some(tracks) = metadata.audio_tracks.as_ref() {
+///     println!("Audio tracks: {}", tracks.len());
+/// }
 /// ```
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct MediaMetadata {
     /// Video stream metadata, if a video stream is present.
     pub video: Option<VideoMetadata>,
-    /// Audio stream metadata, if an audio stream is present.
+    /// Audio stream metadata for the best (default) audio stream.
     pub audio: Option<AudioMetadata>,
+    /// Metadata for all audio tracks in the file.
+    ///
+    /// `None` if there are no audio streams. When present, the first entry
+    /// matches [`audio`](MediaMetadata::audio) (the "best" stream).
+    pub audio_tracks: Option<Vec<AudioMetadata>>,
+    /// Subtitle stream metadata for the best subtitle stream.
+    pub subtitle: Option<SubtitleMetadata>,
+    /// Metadata for all subtitle tracks in the file.
+    pub subtitle_tracks: Option<Vec<SubtitleMetadata>>,
     /// Total duration of the media file.
     pub duration: Duration,
     /// Container format name (e.g. `"mp4"`, `"matroska"`, `"avi"`).
@@ -56,6 +68,8 @@ pub struct VideoMetadata {
 /// Metadata for an audio stream.
 ///
 /// Includes sample rate, channel count, codec name, and bit rate.
+/// When multiple audio tracks exist, use
+/// [`track_index`](AudioMetadata::track_index) to identify each.
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct AudioMetadata {
@@ -67,4 +81,24 @@ pub struct AudioMetadata {
     pub codec: String,
     /// Bit rate in bits per second.
     pub bit_rate: u64,
+    /// Zero-based track number among all audio streams in the file.
+    pub track_index: usize,
+    /// FFmpeg stream index within the container.
+    pub(crate) stream_index: usize,
+}
+
+/// Metadata for a subtitle stream.
+///
+/// Includes codec name, language (if tagged), and track index.
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct SubtitleMetadata {
+    /// Codec name (e.g. `"subrip"`, `"ass"`, `"mov_text"`).
+    pub codec: String,
+    /// Language tag from stream metadata (e.g. `"eng"`, `"fre"`), if available.
+    pub language: Option<String>,
+    /// Zero-based track number among all subtitle streams in the file.
+    pub track_index: usize,
+    /// FFmpeg stream index within the container.
+    pub(crate) stream_index: usize,
 }

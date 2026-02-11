@@ -62,14 +62,40 @@
 //! platform-specific instructions.
 
 pub mod audio;
+#[cfg(feature = "async-tokio")]
+pub mod stream;
+pub mod config;
+pub mod convert;
 pub mod error;
+pub mod iterator;
+#[cfg(feature = "hw-accel")]
+pub mod hwaccel;
 pub mod metadata;
+#[cfg(feature = "parallel")]
+mod parallel;
+pub mod progress;
+#[cfg(feature = "scene-detection")]
+pub mod scene;
+pub mod subtitle;
 pub mod unbundler;
 mod utilities;
+pub mod validation;
 pub mod video;
 
+#[cfg(feature = "async-tokio")]
+pub use stream::{AudioFuture, FrameStream};
 pub use audio::{AudioExtractor, AudioFormat};
+pub use config::{ExtractionConfig, FrameOutputConfig, OutputPixelFormat};
+pub use convert::Remuxer;
 pub use error::UnbundleError;
-pub use metadata::{AudioMetadata, MediaMetadata, VideoMetadata};
+pub use iterator::FrameIterator;
+#[cfg(feature = "hw-accel")]
+pub use hwaccel::{HwAccelMode, HwDeviceType};
+pub use metadata::{AudioMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata};
+pub use progress::{CancellationToken, OperationType, ProgressCallback, ProgressInfo};
+#[cfg(feature = "scene-detection")]
+pub use scene::{SceneChange, SceneDetectionConfig};
+pub use subtitle::{SubtitleEntry, SubtitleExtractor, SubtitleFormat};
 pub use unbundler::MediaUnbundler;
+pub use validation::ValidationReport;
 pub use video::{FrameRange, VideoExtractor};

@@ -18,6 +18,7 @@ use crate::audio::AudioFormat;
 /// Variants carry enough context to diagnose the problem without needing
 /// additional logging at the call site.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum UnbundleError {
     /// The media file could not be opened.
     #[error("Failed to open media file at {path}: {reason}")]
@@ -89,6 +90,18 @@ pub enum UnbundleError {
     /// An error from the `image` crate during frame conversion.
     #[error("Image processing error: {0}")]
     ImageError(#[from] ImageError),
+
+    /// The operation was cancelled via a [`CancellationToken`](crate::CancellationToken).
+    #[error("Operation cancelled")]
+    Cancelled,
+
+    /// The file does not contain a subtitle stream.
+    #[error("No subtitle stream found in file")]
+    NoSubtitleStream,
+
+    /// Subtitle data could not be decoded.
+    #[error("Failed to decode subtitle: {0}")]
+    SubtitleDecodeError(String),
 }
 
 impl From<FfmpegError> for UnbundleError {

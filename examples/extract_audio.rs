@@ -3,9 +3,11 @@
 //! Usage:
 //!   cargo run --example extract_audio -- <input_file>
 
+use std::error::Error;
+
 use unbundle::{AudioFormat, MediaUnbundler};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "input.mp4".to_string());

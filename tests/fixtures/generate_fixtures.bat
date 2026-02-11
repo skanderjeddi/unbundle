@@ -56,6 +56,34 @@ ffmpeg -y ^
     "%FIXTURES_DIR%sample_video.mkv"
 echo   Created sample_video.mkv
 
+REM 6. sample_with_subtitles.mkv — MKV with embedded SRT subtitle track
+REM    First create a temporary SRT file, then mux it into the MKV.
+(
+echo 1
+echo 00:00:00,500 --^> 00:00:02,000
+echo Hello, world!
+echo.
+echo 2
+echo 00:00:02,500 --^> 00:00:04,000
+echo This is a subtitle test.
+echo.
+echo 3
+echo 00:00:04,500 --^> 00:00:05,000
+echo Goodbye!
+) > "%FIXTURES_DIR%temp_subs.srt"
+
+ffmpeg -y ^
+    -f lavfi -i "testsrc=duration=5:size=320x240:rate=25" ^
+    -f lavfi -i "sine=frequency=500:duration=5:sample_rate=44100" ^
+    -i "%FIXTURES_DIR%temp_subs.srt" ^
+    -c:v libx264 -preset ultrafast -pix_fmt yuv420p ^
+    -c:a aac -b:a 64k -ac 2 ^
+    -c:s srt ^
+    -shortest ^
+    "%FIXTURES_DIR%sample_with_subtitles.mkv"
+del "%FIXTURES_DIR%temp_subs.srt"
+echo   Created sample_with_subtitles.mkv
+
 echo.
 echo All fixtures generated successfully.
 echo You can now run: cargo test

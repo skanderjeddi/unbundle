@@ -58,6 +58,33 @@ ffmpeg -y \
     "${FIXTURES_DIR}/sample_video.mkv"
 echo "  Created sample_video.mkv"
 
+# 6. sample_with_subtitles.mkv — MKV with embedded SRT subtitle track
+cat > "${FIXTURES_DIR}/temp_subs.srt" <<'EOF'
+1
+00:00:00,500 --> 00:00:02,000
+Hello, world!
+
+2
+00:00:02,500 --> 00:00:04,000
+This is a subtitle test.
+
+3
+00:00:04,500 --> 00:00:05,000
+Goodbye!
+EOF
+
+ffmpeg -y \
+    -f lavfi -i "testsrc=duration=5:size=320x240:rate=25" \
+    -f lavfi -i "sine=frequency=500:duration=5:sample_rate=44100" \
+    -i "${FIXTURES_DIR}/temp_subs.srt" \
+    -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+    -c:a aac -b:a 64k -ac 2 \
+    -c:s srt \
+    -shortest \
+    "${FIXTURES_DIR}/sample_with_subtitles.mkv"
+rm -f "${FIXTURES_DIR}/temp_subs.srt"
+echo "  Created sample_with_subtitles.mkv"
+
 echo ""
 echo "All fixtures generated successfully."
 echo "You can now run: cargo test"

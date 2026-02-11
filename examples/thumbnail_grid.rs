@@ -6,10 +6,12 @@
 //! Usage:
 //!   cargo run --example thumbnail_grid -- <input_file> [columns] [rows]
 
+use std::error::Error;
+
 use image::{DynamicImage, GenericImage};
 use unbundle::{FrameRange, MediaUnbundler};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "input.mp4".to_string());

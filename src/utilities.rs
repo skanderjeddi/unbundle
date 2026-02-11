@@ -5,23 +5,35 @@
 
 use std::time::Duration;
 
-use ffmpeg_next::{Rational, frame::Video as VideoFrame};
+use ffmpeg_next::{frame::Video as VideoFrame, Rational};
 
 /// Copy pixel data from an FFmpeg video frame into a tightly-packed RGB buffer.
 ///
 /// FFmpeg frames frequently carry per-row padding (stride > width × 3).
 /// This function strips that padding so the result can be passed directly to
 /// [`image::RgbImage::from_raw`].
+#[allow(dead_code)]
 pub fn frame_to_rgb_buffer(video_frame: &VideoFrame, width: u32, height: u32) -> Vec<u8> {
+    frame_to_buffer(video_frame, width, height, 3)
+}
+
+/// Copy pixel data from an FFmpeg video frame into a tightly-packed buffer.
+///
+/// `bytes_per_pixel` is the number of bytes per pixel for the output format
+/// (e.g. 3 for RGB24, 4 for RGBA, 1 for GRAY8).
+pub fn frame_to_buffer(
+    video_frame: &VideoFrame,
+    width: u32,
+    height: u32,
+    bytes_per_pixel: usize,
+) -> Vec<u8> {
     let stride = video_frame.stride(0);
-    let expected_stride = (width as usize) * 3;
+    let expected_stride = (width as usize) * bytes_per_pixel;
     let data = video_frame.data(0);
 
     if stride == expected_stride {
-        // No padding — fast path: copy the entire plane at once.
         data[..expected_stride * (height as usize)].to_vec()
     } else {
-        // Stride includes padding bytes — copy row by row.
         let mut buffer = Vec::with_capacity(expected_stride * (height as usize));
         for row in 0..(height as usize) {
             let row_start = row * stride;

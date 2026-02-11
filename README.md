@@ -1,23 +1,49 @@
 # unbundle
 
-Unbundle media files — extract still frames and audio from video files.
+Unbundle media files — extract still frames, audio tracks, and subtitles from
+video files.
 
 `unbundle` provides a clean, ergonomic Rust API for extracting video frames as
 [`image::DynamicImage`](https://docs.rs/image/latest/image/enum.DynamicImage.html)
-values and audio tracks as encoded byte vectors, powered by FFmpeg via
+values, audio tracks as encoded byte vectors, and subtitle tracks as structured
+text, powered by FFmpeg via
 [`ffmpeg-next`](https://crates.io/crates/ffmpeg-next).
 
 ## Features
 
 - **Frame extraction** — by frame number, timestamp, range, interval, or
   specific frame list
-- **Audio extraction** — to WAV, MP3, FLAC, or AAC
-- **In-memory or file-based** audio output
+- **Audio extraction** — to WAV, MP3, FLAC, or AAC (file or in-memory)
+- **Subtitle extraction** — decode text-based subtitles to SRT, WebVTT, or raw
+  text
+- **Container remuxing** — lossless format conversion (e.g. MKV → MP4) without
+  re-encoding
 - **Rich metadata** — video dimensions, frame rate, frame count, audio sample
-  rate, channels, codec, and more
+  rate, channels, codec info, multi-track audio/subtitle metadata
+- **Configurable output** — pixel format (RGB8, RGBA8, GRAY8), target
+  resolution with aspect ratio preservation
+- **Progress & cancellation** — cooperative progress callbacks and
+  `CancellationToken` for long-running operations
+- **Streaming iteration** — lazy `FrameIterator` (pull-based) and
+  `for_each_frame` (push-based) without buffering entire frame sets
+- **Validation** — inspect media files for structural issues before extraction
 - **Efficient seeking** — seeks to the nearest keyframe, then decodes forward
-- **Zero-copy in-memory audio** — uses FFmpeg's dynamic buffer I/O to encode
-  audio directly to memory without temporary files
+- **Zero-copy in-memory audio** — uses FFmpeg's dynamic buffer I/O
+
+### Optional Features (feature flags)
+
+| Feature | Description |
+|---------|-------------|
+| `async-tokio` | `FrameStream` (async frame iteration) and `AudioFuture` via Tokio |
+| `parallel` | `frames_parallel()` distributes decoding across rayon threads |
+| `hw-accel` | Hardware-accelerated decoding (CUDA, VAAPI, DXVA2, D3D11VA, VideoToolbox, QSV) |
+| `scene-detection` | Scene change detection via FFmpeg's `scdet` filter |
+| `full` | Enables all of the above |
+
+```toml
+[dependencies]
+unbundle = { version = "0.1", features = ["full"] }
+```
 
 ## Installation
 
@@ -99,6 +125,30 @@ let frames = unbundler.video().frames(
 )?;
 ```
 
+### Streaming Frame Iteration
+
+```rust
+use unbundle::{FrameRange, MediaUnbundler};
+
+let mut unbundler = MediaUnbundler::open("input.mp4")?;
+
+// Push-based: process each frame without buffering
+unbundler.video().for_each_frame(
+    FrameRange::Range(0, 99),
+    |frame_number, image| {
+        image.save(format!("frame_{frame_number}.png"))?;
+        Ok(())
+    },
+)?;
+
+// Pull-based: lazy iterator with early exit
+let iter = unbundler.video().frame_iter(FrameRange::Range(0, 99))?;
+for result in iter {
+    let (frame_number, image) = result?;
+    image.save(format!("frame_{frame_number}.png"))?;
+}
+```
+
 ### Extract Audio
 
 ```rust
@@ -121,6 +171,88 @@ unbundler.audio().save_range(
 
 // Extract audio to memory
 let audio_bytes = unbundler.audio().extract(AudioFormat::Wav)?;
+
+// Multi-track: extract the second audio track
+let audio_bytes = unbundler.audio_track(1)?.extract(AudioFormat::Wav)?;
+```
+
+### Extract Subtitles
+
+```rust
+use unbundle::{MediaUnbundler, SubtitleFormat};
+
+let mut unbundler = MediaUnbundler::open("input.mkv")?;
+
+// Extract subtitle entries with timing
+let entries = unbundler.subtitle().extract()?;
+for entry in &entries {
+    println!("[{:?} → {:?}] {}", entry.start_time, entry.end_time, entry.text);
+}
+
+// Save as SRT file
+unbundler.subtitle().save("output.srt", SubtitleFormat::Srt)?;
+
+// Multi-track: extract the second subtitle track
+unbundler.subtitle_track(1)?.save("track2.vtt", SubtitleFormat::WebVtt)?;
+```
+
+### Container Remuxing
+
+```rust
+use unbundle::Remuxer;
+
+// Convert MKV to MP4 without re-encoding
+Remuxer::new("input.mkv", "output.mp4")?.run()?;
+
+// Exclude subtitles during remux
+Remuxer::new("input.mkv", "output.mp4")?
+    .exclude_subtitles()
+    .run()?;
+```
+
+### Progress & Cancellation
+
+```rust
+use std::sync::Arc;
+
+use unbundle::{
+    CancellationToken, ExtractionConfig, FrameRange,
+    MediaUnbundler, ProgressCallback, ProgressInfo,
+};
+
+struct PrintProgress;
+impl ProgressCallback for PrintProgress {
+    fn on_progress(&self, info: &ProgressInfo) {
+        println!("Frame {}/{}", info.current, info.total.unwrap_or(0));
+    }
+}
+
+let token = CancellationToken::new();
+let config = ExtractionConfig::new()
+    .with_progress(Arc::new(PrintProgress))
+    .with_cancellation(token.clone());
+
+let mut unbundler = MediaUnbundler::open("input.mp4")?;
+let frames = unbundler.video().frames_with_config(
+    FrameRange::Range(0, 99),
+    &config,
+)?;
+```
+
+### Custom Output Format
+
+```rust
+use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler, OutputPixelFormat};
+
+let config = ExtractionConfig::new()
+    .with_pixel_format(OutputPixelFormat::Rgba8)
+    .with_resolution(1280, 720);
+
+let mut unbundler = MediaUnbundler::open("input.mp4")?;
+let frames = unbundler.video().frames_with_config(
+    FrameRange::Interval(30),
+    &config,
+)?;
 ```
 
 ### Read Metadata
@@ -145,6 +277,29 @@ if let Some(audio) = &metadata.audio {
     println!("Audio: {} Hz, {} channels, codec: {}",
         audio.sample_rate, audio.channels, audio.codec);
 }
+
+// List all audio and subtitle tracks
+if let Some(tracks) = &metadata.audio_tracks {
+    println!("{} audio track(s)", tracks.len());
+}
+if let Some(tracks) = &metadata.subtitle_tracks {
+    println!("{} subtitle track(s)", tracks.len());
+}
+```
+
+### Validate Media Files
+
+```rust
+use unbundle::MediaUnbundler;
+
+let unbundler = MediaUnbundler::open("input.mp4")?;
+let report = unbundler.validate();
+
+if report.is_valid() {
+    println!("File is valid");
+} else {
+    println!("{report}");
+}
 ```
 
 ## API Documentation
@@ -158,12 +313,30 @@ See the [API docs](https://docs.rs/unbundle) for complete documentation.
 | `MediaUnbundler` | Main entry point — opens a media file and provides access to extractors |
 | `VideoExtractor` | Extracts video frames as `DynamicImage` |
 | `AudioExtractor` | Extracts audio tracks as bytes or files |
+| `SubtitleExtractor` | Extracts text-based subtitle tracks |
+| `Remuxer` | Lossless container format conversion |
 | `FrameRange` | Specifies which frames to extract (range, interval, timestamps, etc.) |
+| `FrameIterator` | Lazy, pull-based frame iterator |
 | `AudioFormat` | Output audio format (WAV, MP3, FLAC, AAC) |
+| `SubtitleFormat` | Output subtitle format (SRT, WebVTT, Raw) |
+| `ExtractionConfig` | Threading progress callbacks, cancellation, pixel format, resolution, HW accel |
+| `ValidationReport` | Result of media file validation |
 | `MediaMetadata` | Container-level metadata (duration, format) |
 | `VideoMetadata` | Video stream metadata (dimensions, frame rate, codec) |
 | `AudioMetadata` | Audio stream metadata (sample rate, channels, codec) |
+| `SubtitleMetadata` | Subtitle stream metadata (codec, language) |
 | `UnbundleError` | Error type with rich context |
+
+### Feature-Gated Types
+
+| Type | Feature | Description |
+|------|---------|-------------|
+| `FrameStream` | `async-tokio` | Async stream of decoded frames via Tokio |
+| `AudioFuture` | `async-tokio` | Async audio extraction future |
+| `HwAccelMode` | `hw-accel` | Hardware acceleration mode selection |
+| `HwDeviceType` | `hw-accel` | Supported HW device types (CUDA, VAAPI, etc.) |
+| `SceneChange` | `scene-detection` | Detected scene change with timestamp and score |
+| `SceneDetectionConfig` | `scene-detection` | Scene detection threshold configuration |
 
 ## Examples
 
@@ -185,12 +358,18 @@ cargo run --example metadata -- path/to/video.mp4
 
 - **Seeking:** Uses FFmpeg's keyframe-based seeking. For sequential access
   (ranges, intervals), frames are decoded without redundant seeks.
-- **Decoder reuse:** Each extraction call creates a fresh, lightweight decoder.
-  FFmpeg decoder creation is fast relative to actual decoding.
+- **Decoder lifecycle:** Each extraction call creates a fresh, lightweight
+  decoder. FFmpeg decoder creation is fast relative to actual decoding.
 - **Batch optimisation:** `FrameRange::Specific` sorts requested frame numbers
   and processes them in order to minimise seeks.
+- **Streaming:** `for_each_frame` and `FrameIterator` process frames one at a
+  time without buffering the entire frame set.
+- **Parallel extraction:** `frames_parallel()` (feature `parallel`) splits
+  frames across rayon threads, each with its own demuxer.
+- **Hardware acceleration:** When enabled (feature `hw-accel`), the decoder
+  attempts GPU-accelerated decoding with automatic fallback to software.
 - **Stride handling:** Correctly handles FFmpeg's row padding when converting
-  frames to `image::RgbImage`.
+  frames to `image` buffers.
 - **In-memory audio:** Uses `avio_open_dyn_buf` for zero-copy in-memory audio
   encoding without temporary files.
 
@@ -210,6 +389,12 @@ Then run tests:
 
 ```bash
 cargo test
+```
+
+Run with all features:
+
+```bash
+cargo test --all-features
 ```
 
 ## License

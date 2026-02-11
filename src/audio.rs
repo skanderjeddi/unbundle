@@ -4,21 +4,26 @@
 //! media files, and [`AudioFormat`] for specifying the output encoding.
 //! Audio can be extracted to memory as `Vec<u8>` or written directly to a file.
 
-use std::{ffi::CString, path::Path, ptr, time::Duration};
+use std::{ffi::CString, fmt::{Display, Formatter, Result as FmtResult}, path::Path, time::Duration};
 
 use ffmpeg_next::{
-    ChannelLayout, Packet, Rational,
-    codec::{Id, context::Context as CodecContext},
+    ChannelLayout,
+    codec::{context::Context as CodecContext, Id},
     decoder::Audio as AudioDecoder,
     encoder::Audio as AudioEncoder,
-    format::{Sample, context::Output, sample::Type as SampleType},
+    format::{context::Output, Sample, sample::Type as SampleType},
     frame::Audio as AudioFrame,
+    Packet,
     packet::Mut as PacketMut,
+    Rational,
     software::resampling::Context as ResamplingContext,
 };
 use ffmpeg_sys_next::{AVFormatContext, AVRational};
 
-use crate::{error::UnbundleError, unbundler::MediaUnbundler};
+use crate::{config::ExtractionConfig, error::UnbundleError, unbundler::MediaUnbundler};
+
+#[cfg(feature = "async-tokio")]
+use crate::stream::AudioFuture;
 
 /// Audio output format.
 ///
@@ -36,8 +41,8 @@ pub enum AudioFormat {
     Aac,
 }
 
-impl std::fmt::Display for AudioFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for AudioFormat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             AudioFormat::Wav => write!(f, "WAV"),
             AudioFormat::Mp3 => write!(f, "MP3"),
@@ -71,13 +76,23 @@ impl AudioFormat {
 
 /// Audio extraction operations.
 ///
-/// Obtained via [`MediaUnbundler::audio`]. Provides methods for extracting
+/// Obtained via [`MediaUnbundler::audio`] or
+/// [`MediaUnbundler::audio_track`]. Provides methods for extracting
 /// complete audio tracks or segments, either to memory or to files.
 pub struct AudioExtractor<'a> {
     pub(crate) unbundler: &'a mut MediaUnbundler,
+    /// Which audio stream to extract. `None` means "use default".
+    pub(crate) stream_index: Option<usize>,
 }
 
 impl<'a> AudioExtractor<'a> {
+    /// Resolve the audio stream index, falling back to the unbundler's default.
+    fn resolve_stream_index(&self) -> Result<usize, UnbundleError> {
+        self.stream_index
+            .or(self.unbundler.audio_stream_index)
+            .ok_or(UnbundleError::NoAudioStream)
+    }
+
     /// Extract the complete audio track to memory.
     ///
     /// Returns the encoded audio data as a byte vector in the specified format.
@@ -99,7 +114,7 @@ impl<'a> AudioExtractor<'a> {
     /// # Ok::<(), unbundle::UnbundleError>(())
     /// ```
     pub fn extract(&mut self, format: AudioFormat) -> Result<Vec<u8>, UnbundleError> {
-        self.extract_audio_to_memory(format, None, None)
+        self.extract_audio_to_memory(format, None, None, None)
     }
 
     /// Extract an audio segment by time range to memory.
@@ -139,7 +154,7 @@ impl<'a> AudioExtractor<'a> {
                 end: format!("{end:?}"),
             });
         }
-        self.extract_audio_to_memory(format, Some(start), Some(end))
+        self.extract_audio_to_memory(format, Some(start), Some(end), None)
     }
 
     /// Save the complete audio track to a file.
@@ -166,7 +181,7 @@ impl<'a> AudioExtractor<'a> {
         path: P,
         format: AudioFormat,
     ) -> Result<(), UnbundleError> {
-        self.save_audio_to_file(path.as_ref(), format, None, None)
+        self.save_audio_to_file(path.as_ref(), format, None, None, None)
     }
 
     /// Save an audio segment to a file.
@@ -206,7 +221,107 @@ impl<'a> AudioExtractor<'a> {
                 end: format!("{end:?}"),
             });
         }
-        self.save_audio_to_file(path.as_ref(), format, Some(start), Some(end))
+        self.save_audio_to_file(path.as_ref(), format, Some(start), Some(end), None)
+    }
+
+    /// Extract the complete audio track to memory with cancellation support.
+    ///
+    /// Like [`extract`](AudioExtractor::extract) but accepts an
+    /// [`ExtractionConfig`] for cancellation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
+    /// any error from [`extract`](AudioExtractor::extract).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{AudioFormat, CancellationToken, ExtractionConfig, MediaUnbundler};
+    ///
+    /// let token = CancellationToken::new();
+    /// let config = ExtractionConfig::new()
+    ///     .with_cancellation(token.clone());
+    ///
+    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let audio = unbundler.audio().extract_with_config(AudioFormat::Wav, &config)?;
+    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// ```
+    pub fn extract_with_config(
+        &mut self,
+        format: AudioFormat,
+        config: &ExtractionConfig,
+    ) -> Result<Vec<u8>, UnbundleError> {
+        self.extract_audio_to_memory(format, None, None, Some(config))
+    }
+
+    /// Extract an audio segment to memory with cancellation support.
+    ///
+    /// Like [`extract_range`](AudioExtractor::extract_range) but accepts an
+    /// [`ExtractionConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
+    /// any error from [`extract_range`](AudioExtractor::extract_range).
+    pub fn extract_range_with_config(
+        &mut self,
+        start: Duration,
+        end: Duration,
+        format: AudioFormat,
+        config: &ExtractionConfig,
+    ) -> Result<Vec<u8>, UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        self.extract_audio_to_memory(format, Some(start), Some(end), Some(config))
+    }
+
+    /// Save the complete audio track to a file with cancellation support.
+    ///
+    /// Like [`save`](AudioExtractor::save) but accepts an
+    /// [`ExtractionConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
+    /// any error from [`save`](AudioExtractor::save).
+    pub fn save_with_config<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        format: AudioFormat,
+        config: &ExtractionConfig,
+    ) -> Result<(), UnbundleError> {
+        self.save_audio_to_file(path.as_ref(), format, None, None, Some(config))
+    }
+
+    /// Save an audio segment to a file with cancellation support.
+    ///
+    /// Like [`save_range`](AudioExtractor::save_range) but accepts an
+    /// [`ExtractionConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
+    /// any error from [`save_range`](AudioExtractor::save_range).
+    pub fn save_range_with_config<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        start: Duration,
+        end: Duration,
+        format: AudioFormat,
+        config: &ExtractionConfig,
+    ) -> Result<(), UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        self.save_audio_to_file(path.as_ref(), format, Some(start), Some(end), Some(config))
     }
 
     // ── Private helpers ────────────────────────────────────────────────
@@ -221,11 +336,9 @@ impl<'a> AudioExtractor<'a> {
         format: AudioFormat,
         start: Option<Duration>,
         end: Option<Duration>,
+        config: Option<&ExtractionConfig>,
     ) -> Result<Vec<u8>, UnbundleError> {
-        let audio_stream_index = self
-            .unbundler
-            .audio_stream_index
-            .ok_or(UnbundleError::NoAudioStream)?;
+        let audio_stream_index = self.resolve_stream_index()?;
 
         // Validate timestamps.
         let media_duration = self.unbundler.metadata.duration;
@@ -309,12 +422,12 @@ impl<'a> AudioExtractor<'a> {
                 UnbundleError::AudioEncodeError(format!("Invalid container format name: {error}"))
             })?;
 
-            let mut output_format_context: *mut AVFormatContext = ptr::null_mut();
+            let mut output_format_context: *mut AVFormatContext = std::ptr::null_mut();
             let allocation_result = ffmpeg_sys_next::avformat_alloc_output_context2(
                 &mut output_format_context,
-                ptr::null_mut(),
+                std::ptr::null_mut(),
                 container_name_c.as_ptr(),
-                ptr::null(),
+                std::ptr::null(),
             );
             if allocation_result < 0 || output_format_context.is_null() {
                 return Err(UnbundleError::AudioEncodeError(
@@ -334,9 +447,9 @@ impl<'a> AudioExtractor<'a> {
 
             // Add an output audio stream.
             let output_stream =
-                ffmpeg_sys_next::avformat_new_stream(output_format_context, ptr::null());
+                ffmpeg_sys_next::avformat_new_stream(output_format_context, std::ptr::null());
             if output_stream.is_null() {
-                let mut buffer_pointer: *mut u8 = ptr::null_mut();
+                let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
                 ffmpeg_sys_next::avio_close_dyn_buf(
                     (*output_format_context).pb,
                     &mut buffer_pointer,
@@ -344,7 +457,7 @@ impl<'a> AudioExtractor<'a> {
                 if !buffer_pointer.is_null() {
                     ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
                 }
-                (*output_format_context).pb = ptr::null_mut();
+                (*output_format_context).pb = std::ptr::null_mut();
                 ffmpeg_sys_next::avformat_free_context(output_format_context);
                 return Err(UnbundleError::AudioEncodeError(
                     "Failed to add output stream".to_string(),
@@ -362,7 +475,7 @@ impl<'a> AudioExtractor<'a> {
             let (mut encoder, encoder_time_base) = match encoder_result {
                 Ok(value) => value,
                 Err(error) => {
-                    let mut buffer_pointer: *mut u8 = ptr::null_mut();
+                    let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
                     ffmpeg_sys_next::avio_close_dyn_buf(
                         (*output_format_context).pb,
                         &mut buffer_pointer,
@@ -370,7 +483,7 @@ impl<'a> AudioExtractor<'a> {
                     if !buffer_pointer.is_null() {
                         ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
                     }
-                    (*output_format_context).pb = ptr::null_mut();
+                    (*output_format_context).pb = std::ptr::null_mut();
                     ffmpeg_sys_next::avformat_free_context(output_format_context);
                     return Err(error);
                 }
@@ -388,9 +501,9 @@ impl<'a> AudioExtractor<'a> {
 
             // Write the container header.
             let write_header_result =
-                ffmpeg_sys_next::avformat_write_header(output_format_context, ptr::null_mut());
+                ffmpeg_sys_next::avformat_write_header(output_format_context, std::ptr::null_mut());
             if write_header_result < 0 {
-                let mut buffer_pointer: *mut u8 = ptr::null_mut();
+                let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
                 ffmpeg_sys_next::avio_close_dyn_buf(
                     (*output_format_context).pb,
                     &mut buffer_pointer,
@@ -398,7 +511,7 @@ impl<'a> AudioExtractor<'a> {
                 if !buffer_pointer.is_null() {
                     ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
                 }
-                (*output_format_context).pb = ptr::null_mut();
+                (*output_format_context).pb = std::ptr::null_mut();
                 ffmpeg_sys_next::avformat_free_context(output_format_context);
                 return Err(UnbundleError::AudioEncodeError(
                     "Failed to write output header".to_string(),
@@ -434,11 +547,12 @@ impl<'a> AudioExtractor<'a> {
                 &mut samples_written,
                 encoder_time_base,
                 end_stream_timestamp,
+                config,
                 &mut writer,
             );
 
             if let Err(error) = transcode_result {
-                let mut buffer_pointer: *mut u8 = ptr::null_mut();
+                let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
                 ffmpeg_sys_next::avio_close_dyn_buf(
                     (*output_format_context).pb,
                     &mut buffer_pointer,
@@ -446,7 +560,7 @@ impl<'a> AudioExtractor<'a> {
                 if !buffer_pointer.is_null() {
                     ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
                 }
-                (*output_format_context).pb = ptr::null_mut();
+                (*output_format_context).pb = std::ptr::null_mut();
                 ffmpeg_sys_next::avformat_free_context(output_format_context);
                 return Err(error);
             }
@@ -464,7 +578,7 @@ impl<'a> AudioExtractor<'a> {
                     encoder_time_base,
                     &mut writer,
                 ) {
-                    let mut buffer_pointer: *mut u8 = ptr::null_mut();
+                    let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
                     ffmpeg_sys_next::avio_close_dyn_buf(
                         (*output_format_context).pb,
                         &mut buffer_pointer,
@@ -472,7 +586,7 @@ impl<'a> AudioExtractor<'a> {
                     if !buffer_pointer.is_null() {
                         ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
                     }
-                    (*output_format_context).pb = ptr::null_mut();
+                    (*output_format_context).pb = std::ptr::null_mut();
                     ffmpeg_sys_next::avformat_free_context(output_format_context);
                     return Err(error);
                 }
@@ -496,7 +610,7 @@ impl<'a> AudioExtractor<'a> {
             ffmpeg_sys_next::av_write_trailer(output_format_context);
 
             // Extract the dynamic buffer contents.
-            let mut buffer_pointer: *mut u8 = ptr::null_mut();
+            let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
             let buffer_size = ffmpeg_sys_next::avio_close_dyn_buf(
                 (*output_format_context).pb,
                 &mut buffer_pointer,
@@ -513,7 +627,7 @@ impl<'a> AudioExtractor<'a> {
             }
 
             // Prevent the destructor from calling avio_close on the freed buffer.
-            (*output_format_context).pb = ptr::null_mut();
+            (*output_format_context).pb = std::ptr::null_mut();
             ffmpeg_sys_next::avformat_free_context(output_format_context);
 
             Ok(result_bytes)
@@ -527,11 +641,9 @@ impl<'a> AudioExtractor<'a> {
         format: AudioFormat,
         start: Option<Duration>,
         end: Option<Duration>,
+        config: Option<&ExtractionConfig>,
     ) -> Result<(), UnbundleError> {
-        let audio_stream_index = self
-            .unbundler
-            .audio_stream_index
-            .ok_or(UnbundleError::NoAudioStream)?;
+        let audio_stream_index = self.resolve_stream_index()?;
 
         let media_duration = self.unbundler.metadata.duration;
         if let Some(start_time) = start
@@ -640,6 +752,7 @@ impl<'a> AudioExtractor<'a> {
                 &mut samples_written,
                 encoder_time_base,
                 end_stream_timestamp,
+                config,
                 &mut writer,
             )?;
 
@@ -728,9 +841,15 @@ impl<'a> AudioExtractor<'a> {
         samples_written: &mut i64,
         encoder_time_base: Rational,
         end_stream_timestamp: Option<i64>,
+        config: Option<&ExtractionConfig>,
         writer: &mut W,
     ) -> Result<(), UnbundleError> {
         for (stream, packet) in self.unbundler.input_context.packets() {
+            if let Some(cfg) = config
+                && cfg.is_cancelled()
+            {
+                return Err(UnbundleError::Cancelled);
+            }
             if stream.index() != audio_stream_index {
                 continue;
             }
@@ -768,6 +887,121 @@ impl<'a> AudioExtractor<'a> {
         }
 
         Ok(())
+    }
+
+    /// Extract the complete audio track asynchronously.
+    ///
+    /// Returns an [`AudioFuture`](crate::stream::AudioFuture) that
+    /// resolves to the encoded audio bytes. The actual transcoding runs on
+    /// a blocking thread so the async runtime is not starved.
+    ///
+    /// A fresh demuxer is opened internally; the mutable borrow on the
+    /// unbundler is released as soon as this method returns.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::NoAudioStream`] if the file has no audio
+    /// stream (validated eagerly before spawning the background thread).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{AudioFormat, ExtractionConfig, MediaUnbundler};
+    ///
+    /// # async fn example() -> Result<(), unbundle::UnbundleError> {
+    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let config = ExtractionConfig::new();
+    /// let audio_bytes = unbundler
+    ///     .audio()
+    ///     .extract_async(AudioFormat::Wav, config)?
+    ///     .await?;
+    /// println!("Got {} bytes of audio", audio_bytes.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "async-tokio")]
+    pub fn extract_async(
+        &mut self,
+        format: AudioFormat,
+        config: ExtractionConfig,
+    ) -> Result<AudioFuture, UnbundleError> {
+        let _stream_index = self.resolve_stream_index()?;
+        let track_index = self.stream_index.and_then(|si| {
+            self.unbundler
+                .audio_stream_indices
+                .iter()
+                .position(|&idx| idx == si)
+        });
+        let file_path = self.unbundler.file_path.clone();
+        Ok(crate::stream::create_audio_future(
+            file_path,
+            format,
+            track_index,
+            None,
+            config,
+        ))
+    }
+
+    /// Extract an audio time range asynchronously.
+    ///
+    /// Like [`extract_async`](AudioExtractor::extract_async) but extracts only
+    /// the segment between `start` and `end`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::NoAudioStream`] if no audio stream exists, or
+    /// [`UnbundleError::InvalidRange`] if `start >= end`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    ///
+    /// use unbundle::{AudioFormat, ExtractionConfig, MediaUnbundler};
+    ///
+    /// # async fn example() -> Result<(), unbundle::UnbundleError> {
+    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let audio = unbundler
+    ///     .audio()
+    ///     .extract_range_async(
+    ///         AudioFormat::Mp3,
+    ///         Duration::from_secs(10),
+    ///         Duration::from_secs(20),
+    ///         ExtractionConfig::new(),
+    ///     )?
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "async-tokio")]
+    pub fn extract_range_async(
+        &mut self,
+        format: AudioFormat,
+        start: Duration,
+        end: Duration,
+        config: ExtractionConfig,
+    ) -> Result<AudioFuture, UnbundleError> {
+        let _stream_index = self.resolve_stream_index()?;
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        let track_index = self.stream_index.and_then(|si| {
+            self.unbundler
+                .audio_stream_indices
+                .iter()
+                .position(|&idx| idx == si)
+        });
+        let file_path = self.unbundler.file_path.clone();
+        Ok(crate::stream::create_audio_future(
+            file_path,
+            format,
+            track_index,
+            Some((start, end)),
+            config,
+        ))
     }
 }
 
