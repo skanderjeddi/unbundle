@@ -6,8 +6,14 @@ authors = ["Skander Jeddi <skanderjeddi@fastmail.com>"]
 description = "Unbundle media files - extract still frames, audio tracks, and subtitles from video files"
 license = "MIT"
 repository = "https://github.com/skanderjeddi/unbundle"
+readme = "README.md"
 keywords = ["video", "audio", "ffmpeg", "extraction", "media"]
 categories = ["multimedia", "multimedia::video", "multimedia::audio"]
+exclude = ["tests/fixtures/*.mp4", "tests/fixtures/*.mkv", "target/"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 ffmpeg-next = "8"

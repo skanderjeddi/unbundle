@@ -1,1 +1,3 @@
 /target
+# Ignore test fixtures
+/tests/fixtures/

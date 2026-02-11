@@ -1,5 +1,9 @@
 # unbundle
 
+[![Crates.io](https://img.shields.io/crates/v/unbundle)](https://crates.io/crates/unbundle)
+[![docs.rs](https://img.shields.io/docsrs/unbundle)](https://docs.rs/unbundle)
+[![License: MIT](https://img.shields.io/crates/l/unbundle)](LICENSE)
+
 Unbundle media files — extract still frames, audio tracks, and subtitles from
 video files.
 
@@ -52,7 +56,7 @@ text, powered by FFmpeg via
 
 ```toml
 [dependencies]
-unbundle = { version = "0.1", features = ["full"] }
+unbundle = { version = "1.1", features = ["full"] }
 ```
 
 ## Installation
@@ -61,7 +65,7 @@ Add `unbundle` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "0.1"
+unbundle = "1.1"
 ```
 
 ### System Requirements
@@ -98,6 +102,8 @@ Set the `FFMPEG_DIR` environment variable to point to your FFmpeg installation.
 ### Extract Video Frames
 
 ```rust
+use std::time::Duration;
+
 use unbundle::MediaUnbundler;
 
 let mut unbundler = MediaUnbundler::open("input.mp4")?;
@@ -107,7 +113,6 @@ let frame = unbundler.video().frame(0)?;
 frame.save("first_frame.png")?;
 
 // Extract a frame at 30 seconds
-use std::time::Duration;
 let frame = unbundler.video().frame_at(Duration::from_secs(30))?;
 frame.save("frame_30s.png")?;
 ```
@@ -358,12 +363,13 @@ println!("Frame {}: keyframe={}, type={:?}, pts={:?}",
 ### Thumbnail Generation
 
 ```rust
+use std::time::Duration;
+
 use unbundle::{MediaUnbundler, ThumbnailConfig, ThumbnailGenerator};
 
 let mut unbundler = MediaUnbundler::open("input.mp4")?;
 
 // Single thumbnail at a timestamp
-use std::time::Duration;
 let thumb = ThumbnailGenerator::at_timestamp(&mut unbundler, Duration::from_secs(5), 320)?;
 
 // Contact-sheet grid
@@ -423,7 +429,7 @@ See the [API docs](https://docs.rs/unbundle) for complete documentation.
 
 ## Examples
 
-See the [`examples/`](examples/) directory:
+See the [`examples/`](https://github.com/skanderjeddi/unbundle/tree/main/examples) directory:
 
 | Example | Description |
 |---------|-------------|
