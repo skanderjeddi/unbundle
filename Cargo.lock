@@ -1458,7 +1458,7 @@ dependencies = [
 
 [[package]]
 name = "unbundle"
-version = "4.0.4"
+version = "4.0.5"
 dependencies = [
  "criterion",
  "ffmpeg-next",

@@ -152,7 +152,7 @@ pub(crate) fn detect_scenes_impl(
     let mut graph = FilterGraph::new();
 
     let buffer_args = format!(
-        "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect=1/1:color_space={}:color_range={}",
+        "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect=1/1:colorspace={}:range={}",
         decoder.width(),
         decoder.height(),
         pix_fmt,
