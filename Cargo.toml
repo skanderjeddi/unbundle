@@ -1,6 +1,6 @@
 [package]
 name = "unbundle"
-version = "4.0.3"
+version = "4.0.4"
 edition = "2024"
 authors = ["Skander Jeddi <skanderjeddi@fastmail.com>"]
 description = "Unbundle media files - extract still frames, audio tracks, and subtitles from video files"

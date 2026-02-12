@@ -129,6 +129,19 @@ pub(crate) fn detect_scenes_impl(
     let pix_fmt = actual_pix_fmt
         .unwrap_or(AVPixelFormat::from(decoder.format()) as i32);
 
+    // Read colorspace and color range from the probed frame so the buffer
+    // filter matches the decoded frame properties exactly. We read the raw
+    // AVFrame fields directly because the safe Rust enum accessors have the
+    // same discriminant-mismatch problem as Pixel.
+    let (color_space, color_range) = if actual_pix_fmt.is_some() {
+        unsafe {
+            let ptr = decoded_frame.as_ptr();
+            ((*ptr).colorspace as i32, (*ptr).color_range as i32)
+        }
+    } else {
+        (2, 0) // AVCOL_SPC_UNSPECIFIED, AVCOL_RANGE_UNSPECIFIED
+    };
+
     // Build the filter graph: buffer → format → scdet → buffersink
     //
     // The `format` filter normalises all frames to YUV420P. This is
@@ -139,12 +152,14 @@ pub(crate) fn detect_scenes_impl(
     let mut graph = FilterGraph::new();
 
     let buffer_args = format!(
-        "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect=1/1",
+        "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect=1/1:color_space={}:color_range={}",
         decoder.width(),
         decoder.height(),
         pix_fmt,
         time_base.numerator(),
         time_base.denominator(),
+        color_space,
+        color_range,
     );
 
     graph
