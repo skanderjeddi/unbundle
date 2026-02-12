@@ -1,0 +1,33 @@
+//! Transcode audio between formats.
+//!
+//! Usage: `cargo run --features transcode --example transcode -- path/to/video.mp4`
+
+use std::time::Duration;
+
+use unbundle::{AudioFormat, MediaUnbundler, Transcoder};
+
+fn main() -> Result<(), unbundle::UnbundleError> {
+    let path = std::env::args().nth(1).expect("Usage: transcode <video_path>");
+
+    let mut unbundler = MediaUnbundler::open(&path)?;
+
+    // Transcode full audio to MP3 in memory.
+    let mp3_bytes = Transcoder::new(&mut unbundler)
+        .format(AudioFormat::Mp3)
+        .run_to_memory()?;
+
+    println!("Transcoded to MP3: {} bytes", mp3_bytes.len());
+
+    // Transcode a range to WAV file.
+    let output = "transcoded_segment.wav";
+    Transcoder::new(&mut unbundler)
+        .format(AudioFormat::Wav)
+        .start(Duration::from_secs(1))
+        .end(Duration::from_secs(3))
+        .run(output)?;
+
+    println!("Transcoded segment saved to {output}");
+    std::fs::remove_file(output).ok();
+
+    Ok(())
+}

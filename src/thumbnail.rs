@@ -109,6 +109,7 @@ impl ThumbnailGenerator {
         timestamp: Duration,
         max_dimension: u32,
     ) -> Result<DynamicImage, UnbundleError> {
+        log::debug!("Generating thumbnail at {:?} (max_dim={})", timestamp, max_dimension);
         let image = unbundler.video().frame_at(timestamp)?;
         let (width, height) = (image.width(), image.height());
         let (thumb_width, thumb_height) =
@@ -180,6 +181,7 @@ impl ThumbnailGenerator {
         config: &ThumbnailConfig,
         extraction_config: &ExtractionConfig,
     ) -> Result<DynamicImage, UnbundleError> {
+        log::debug!("Generating {}x{} thumbnail grid (thumb_width={})", config.columns, config.rows, config.thumbnail_width);
         let video_metadata = unbundler
             .metadata
             .video
@@ -286,6 +288,7 @@ impl ThumbnailGenerator {
         max_dimension: u32,
         extraction_config: &ExtractionConfig,
     ) -> Result<DynamicImage, UnbundleError> {
+        log::debug!("Generating smart thumbnail (samples={}, max_dim={})", sample_count, max_dimension);
         let video_metadata = unbundler
             .metadata
             .video

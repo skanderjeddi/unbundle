@@ -324,6 +324,99 @@ impl<'a> AudioExtractor<'a> {
         self.save_audio_to_file(path.as_ref(), format, Some(start), Some(end), Some(config))
     }
 
+    /// Generate waveform data from the audio stream.
+    ///
+    /// Decodes audio to mono, buckets samples into the configured number
+    /// of bins, and computes min/max/RMS amplitude per bin. The result is
+    /// suitable for rendering a visual waveform.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::NoAudioStream`] if no audio stream exists.
+    /// - [`UnbundleError::WaveformDecodeError`] if decoding fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaUnbundler, WaveformConfig};
+    ///
+    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let waveform = unbundler.audio().generate_waveform(
+    ///     &WaveformConfig::new().bins(1000),
+    /// )?;
+    /// println!("Waveform bins: {}", waveform.bins.len());
+    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// ```
+    #[cfg(feature = "waveform")]
+    pub fn generate_waveform(
+        &mut self,
+        config: &crate::waveform::WaveformConfig,
+    ) -> Result<crate::waveform::WaveformData, UnbundleError> {
+        let audio_stream_index = self.resolve_stream_index()?;
+        crate::waveform::generate_waveform_impl(self.unbundler, audio_stream_index, config)
+    }
+
+    /// Analyze loudness of the audio stream.
+    ///
+    /// Decodes the entire audio track to mono and computes peak amplitude,
+    /// RMS level, and their dBFS equivalents.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::NoAudioStream`] if no audio stream exists.
+    /// - [`UnbundleError::LoudnessError`] if decoding fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::MediaUnbundler;
+    ///
+    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let loudness = unbundler.audio().analyze_loudness()?;
+    /// println!("Peak: {:.1} dBFS", loudness.peak_dbfs);
+    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// ```
+    #[cfg(feature = "loudness")]
+    pub fn analyze_loudness(
+        &mut self,
+    ) -> Result<crate::loudness::LoudnessInfo, UnbundleError> {
+        let audio_stream_index = self.resolve_stream_index()?;
+        crate::loudness::analyze_loudness_impl(self.unbundler, audio_stream_index)
+    }
+
+    /// Create a lazy iterator over decoded audio samples.
+    ///
+    /// The iterator yields [`AudioChunk`](crate::AudioChunk) values
+    /// containing mono f32 samples. Each chunk corresponds roughly to
+    /// one decoded audio frame, so the caller processes audio
+    /// incrementally without loading the entire track into memory.
+    ///
+    /// The iterator borrows the unbundler mutably; drop it to release
+    /// the borrow.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::NoAudioStream`] if no audio stream exists.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::MediaUnbundler;
+    ///
+    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let iter = unbundler.audio().sample_iter()?;
+    /// let mut total = 0u64;
+    /// for chunk in iter {
+    ///     total += chunk?.samples.len() as u64;
+    /// }
+    /// println!("Total mono samples: {total}");
+    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// ```
+    pub fn sample_iter(self) -> Result<crate::audio_iter::AudioIterator<'a>, UnbundleError> {
+        let audio_stream_index = self.resolve_stream_index()?;
+        crate::audio_iter::AudioIterator::new(self.unbundler, audio_stream_index)
+    }
+
     // ── Private helpers ────────────────────────────────────────────────
 
     /// Extract audio to an in-memory buffer using FFmpeg's dynamic buffer I/O.
@@ -339,6 +432,7 @@ impl<'a> AudioExtractor<'a> {
         config: Option<&ExtractionConfig>,
     ) -> Result<Vec<u8>, UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
+        log::debug!("Extracting audio to memory (format={}, stream={})", format, audio_stream_index);
 
         // Validate timestamps.
         let media_duration = self.unbundler.metadata.duration;
@@ -644,6 +738,7 @@ impl<'a> AudioExtractor<'a> {
         config: Option<&ExtractionConfig>,
     ) -> Result<(), UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
+        log::debug!("Saving audio to file {:?} (format={}, stream={})", path, format, audio_stream_index);
 
         let media_duration = self.unbundler.metadata.duration;
         if let Some(start_time) = start

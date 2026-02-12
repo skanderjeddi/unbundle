@@ -74,10 +74,13 @@ pub(crate) fn detect_scenes_impl(
     video_metadata: &VideoMetadata,
     config: &SceneDetectionConfig,
     cancel_check: Option<&dyn Fn() -> bool>,
+    stream_index: Option<usize>,
 ) -> Result<Vec<SceneChange>, UnbundleError> {
-    let video_stream_index = unbundler
-        .video_stream_index
+    let video_stream_index = stream_index
+        .or(unbundler.video_stream_index)
         .ok_or(UnbundleError::NoVideoStream)?;
+
+    log::debug!("Detecting scenes (stream={}, threshold={})", video_stream_index, config.threshold);
 
     let stream = unbundler
         .input_context

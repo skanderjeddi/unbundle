@@ -49,6 +49,8 @@ pub struct MediaUnbundler {
     pub(crate) metadata: MediaMetadata,
     /// Index of the best video stream, if one exists.
     pub(crate) video_stream_index: Option<usize>,
+    /// Indices of all video streams, ordered by track number.
+    pub(crate) video_stream_indices: Vec<usize>,
     /// Index of the best audio stream, if one exists.
     pub(crate) audio_stream_index: Option<usize>,
     /// Indices of all audio streams, ordered by track number.
@@ -67,6 +69,7 @@ impl Debug for MediaUnbundler {
         f.debug_struct("MediaUnbundler")
             .field("metadata", &self.metadata)
             .field("video_stream_index", &self.video_stream_index)
+            .field("video_stream_indices", &self.video_stream_indices)
             .field("audio_stream_index", &self.audio_stream_index)
             .field("audio_stream_indices", &self.audio_stream_indices)
             .field("subtitle_stream_index", &self.subtitle_stream_index)
@@ -98,6 +101,8 @@ impl MediaUnbundler {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, UnbundleError> {
         let path = path.as_ref();
         let canonical_path = path.to_path_buf();
+
+        log::debug!("Opening media file: {}", canonical_path.display());
 
         // Initialise ffmpeg (safe to call multiple times).
         ffmpeg_next::init().map_err(|error| UnbundleError::FileOpen {
@@ -134,15 +139,34 @@ impl MediaUnbundler {
         // Extract container format name.
         let format = input_context.format().name().to_string();
 
-        // Extract video metadata.
-        let video_metadata = if let Some(index) = video_stream_index {
-            let stream = input_context.stream(index).unwrap();
+        // Extract container-level metadata tags.
+        let tags = {
+            let mut map = std::collections::HashMap::new();
+            for (key, value) in input_context.metadata().iter() {
+                map.insert(key.to_string(), value.to_string());
+            }
+            if map.is_empty() { None } else { Some(map) }
+        };
+
+        // Extract video metadata for all video streams.
+        let mut video_stream_indices: Vec<usize> = Vec::new();
+        let mut all_video_metadata: Vec<VideoMetadata> = Vec::new();
+
+        for stream in input_context.streams() {
+            if stream.parameters().medium() != Type::Video {
+                continue;
+            }
+
+            let index = stream.index();
+            let track_index = video_stream_indices.len();
+            video_stream_indices.push(index);
+
             let codec_parameters = stream.parameters();
             let decoder_context =
                 CodecContext::from_parameters(codec_parameters).map_err(|error| {
                     UnbundleError::FileOpen {
                         path: canonical_path.clone(),
-                        reason: format!("Failed to read video codec parameters: {error}"),
+                        reason: format!("Failed to read video codec parameters for stream {index}: {error}"),
                     }
                 })?;
             let video_decoder =
@@ -151,7 +175,7 @@ impl MediaUnbundler {
                     .video()
                     .map_err(|error| UnbundleError::FileOpen {
                         path: canonical_path.clone(),
-                        reason: format!("Failed to create video decoder: {error}"),
+                        reason: format!("Failed to create video decoder for stream {index}: {error}"),
                     })?;
 
             let width = video_decoder.width();
@@ -182,15 +206,70 @@ impl MediaUnbundler {
                 .map(|codec| codec.name().to_string())
                 .unwrap_or_else(|| "unknown".to_string());
 
-            Some(VideoMetadata {
+            // Extract colorspace / HDR metadata.
+            let color_space = {
+                let cs = video_decoder.color_space();
+                let s = format!("{cs:?}");
+                if s == "Unspecified" { None } else { Some(s) }
+            };
+            let color_range = {
+                let cr = video_decoder.color_range();
+                let s = format!("{cr:?}");
+                if s == "Unspecified" { None } else { Some(s) }
+            };
+            let color_primaries = {
+                let cp = video_decoder.color_primaries();
+                let s = format!("{cp:?}");
+                if s == "Unspecified" { None } else { Some(s) }
+            };
+            let color_transfer = {
+                let ct = video_decoder.color_transfer_characteristic();
+                let s = format!("{ct:?}");
+                if s == "Unspecified" { None } else { Some(s) }
+            };
+            let bits_per_raw_sample = {
+                let par = stream.parameters();
+                let raw_par = unsafe { *par.as_ptr() };
+                let bits = raw_par.bits_per_raw_sample;
+                if bits > 0 { Some(bits as u32) } else { None }
+            };
+            let pixel_format_name = {
+                let pf = video_decoder.format();
+                let name = format!("{pf:?}");
+                if name == "None" { None } else { Some(name) }
+            };
+
+            all_video_metadata.push(VideoMetadata {
                 width,
                 height,
                 frames_per_second,
                 frame_count,
                 codec: codec_name,
-            })
+                color_space,
+                color_range,
+                color_primaries,
+                color_transfer,
+                bits_per_raw_sample,
+                pixel_format_name,
+                track_index,
+                stream_index: index,
+            });
+        }
+
+        // Default video is the "best" stream as selected by FFmpeg.
+        let video_metadata = if let Some(best_index) = video_stream_index {
+            all_video_metadata
+                .iter()
+                .find(|m| m.stream_index == best_index)
+                .cloned()
         } else {
+            all_video_metadata.first().cloned()
+        };
+
+        let video_tracks = if all_video_metadata.is_empty() {
             None
+        } else {
+            Some(all_video_metadata)
         };
 
         // Extract audio metadata for all audio streams.
@@ -350,6 +429,7 @@ impl MediaUnbundler {
 
         let metadata = MediaMetadata {
             video: video_metadata,
+            video_tracks,
             audio: audio_metadata,
             audio_tracks,
             subtitle: subtitle_metadata,
@@ -357,12 +437,46 @@ impl MediaUnbundler {
             chapters,
             duration,
             format,
+            tags,
         };
+
+        log::info!(
+            "Opened media file: {} (format={}, duration={:.2}s, video_streams={}, audio_streams={}, subtitle_streams={})",
+            canonical_path.display(),
+            metadata.format,
+            metadata.duration.as_secs_f64(),
+            video_stream_indices.len(),
+            audio_stream_indices.len(),
+            subtitle_stream_indices.len(),
+        );
+
+        if let Some(video) = &metadata.video {
+            log::debug!(
+                "Best video stream: index={}, {}x{}, {:.2} fps, codec={}, ~{} frames",
+                video.stream_index,
+                video.width,
+                video.height,
+                video.frames_per_second,
+                video.codec,
+                video.frame_count,
+            );
+        }
+
+        if let Some(audio) = &metadata.audio {
+            log::debug!(
+                "Best audio stream: index={}, {} Hz, {} ch, codec={}",
+                audio.stream_index,
+                audio.sample_rate,
+                audio.channels,
+                audio.codec,
+            );
+        }
 
         Ok(Self {
             input_context,
             metadata,
             video_stream_index,
+            video_stream_indices,
             audio_stream_index,
             audio_stream_indices,
             subtitle_stream_index,
@@ -379,12 +493,73 @@ impl MediaUnbundler {
         &self.metadata
     }
 
+    /// Create a lazy iterator over all demuxed packets.
+    ///
+    /// The iterator yields [`PacketInfo`](crate::PacketInfo) structs
+    /// containing stream index, PTS, DTS, size and keyframe flag for
+    /// each packet without decoding.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::MediaUnbundler;
+    ///
+    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// for pkt in unbundler.packet_iter()? {
+    ///     let pkt = pkt?;
+    ///     println!("stream={} pts={:?} key={}", pkt.stream_index, pkt.pts, pkt.is_keyframe);
+    /// }
+    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// ```
+    pub fn packet_iter(&mut self) -> Result<crate::packet_iter::PacketIterator<'_>, UnbundleError> {
+        Ok(crate::packet_iter::PacketIterator::new(self))
+    }
+
     /// Obtain a [`VideoExtractor`] for extracting video frames.
     ///
     /// The returned extractor borrows this unbundler mutably, so you cannot
     /// hold extractors for both video and audio simultaneously.
     pub fn video(&mut self) -> VideoExtractor<'_> {
-        VideoExtractor { unbundler: self }
+        VideoExtractor {
+            unbundler: self,
+            stream_index: None,
+        }
+    }
+
+    /// Obtain a [`VideoExtractor`] for a specific video track.
+    ///
+    /// `track_index` is the zero-based index into
+    /// [`MediaMetadata::video_tracks`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::VideoTrackOutOfRange`] if `track_index` is out of
+    /// range.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::MediaUnbundler;
+    ///
+    /// let mut unbundler = MediaUnbundler::open("multi_video.mkv")?;
+    /// // Extract a frame from the second video track
+    /// let frame = unbundler.video_track(1)?.frame(0)?;
+    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// ```
+    pub fn video_track(&mut self, track_index: usize) -> Result<VideoExtractor<'_>, UnbundleError> {
+        let stream_index = self
+            .video_stream_indices
+            .get(track_index)
+            .copied()
+            .ok_or(UnbundleError::VideoTrackOutOfRange {
+                track_index,
+                track_count: self.video_stream_indices.len(),
+            })?;
+
+        Ok(VideoExtractor {
+            unbundler: self,
+            stream_index: Some(stream_index),
+        })
     }
 
     /// Obtain an [`AudioExtractor`] for extracting audio data.

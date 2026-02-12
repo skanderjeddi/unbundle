@@ -18,12 +18,21 @@
 - `FrameRange::Segments` allows extracting frames from multiple disjoint time ranges in a single call. See [src/video.rs](../src/video.rs).
 - `MediaProbe` is a lightweight, stateless probing helper that opens a file, clones `MediaMetadata`, and drops the demuxer immediately. See [src/probe.rs](../src/probe.rs).
 - `ThumbnailGenerator` and `ThumbnailConfig` provide high-level thumbnail helpers: single-frame thumbnails, contact-sheet grids, and variance-based "smart" thumbnail selection. See [src/thumbnail.rs](../src/thumbnail.rs).
+- `GopInfo` and `KeyframeInfo` provide keyframe and GOP (Group of Pictures) structure analysis by scanning packets without decoding. See [src/keyframes.rs](../src/keyframes.rs).
+- `VfrAnalysis` detects variable frame rate streams by analysing PTS distributions. See [src/vfr.rs](../src/vfr.rs).
+- `PacketIterator` and `PacketInfo` provide raw packet-level demuxer iteration without decoding. See [src/packet_iter.rs](../src/packet_iter.rs).
+- `AudioIterator` and `AudioChunk` provide lazy pull-based audio sample iteration with mono f32 resampling. See [src/audio_iter.rs](../src/audio_iter.rs).
 
 ### Feature-gated modules
 - `async-tokio`: `FrameStream` (background decode thread → mpsc channel → `tokio_stream::Stream`) and `AudioFuture` for non-blocking extraction. See [src/stream.rs](../src/stream.rs).
 - `parallel`: `frames_parallel()` distributes frame decoding across rayon threads, each with its own demuxer. See [src/parallel.rs](../src/parallel.rs). Note: `parallel` is a private module (`mod parallel`, not `pub mod`); only exposed through `VideoExtractor::frames_parallel()`.
 - `hw-accel`: `HwAccelMode`, `HwDeviceType`, and helpers for FFmpeg hardware-accelerated decoding via `ffmpeg_sys_next`. Also provides `available_hw_devices()` to enumerate supported hardware decoders at runtime. See [src/hw_accel.rs](../src/hw_accel.rs).
 - `scene-detection`: `SceneChange` and `SceneDetectionConfig` using FFmpeg's `scdet` filter. See [src/scene.rs](../src/scene.rs).
+- `gif`: `GifConfig` and GIF encoding helpers for animated GIF export from video frames. See [src/gif.rs](../src/gif.rs).
+- `waveform`: `WaveformConfig`, `WaveformData`, and `WaveformBin` for audio waveform visualisation data. See [src/waveform.rs](../src/waveform.rs).
+- `loudness`: `LoudnessInfo` for peak/RMS loudness analysis with dBFS conversion. See [src/loudness.rs](../src/loudness.rs).
+- `transcode`: `Transcoder` builder for audio re-encoding between formats. See [src/transcode.rs](../src/transcode.rs).
+- `video-writer`: `VideoWriter`, `VideoWriterConfig`, and `VideoCodec` for encoding image sequences into video files. See [src/video_writer.rs](../src/video_writer.rs).
 
 ## Source file inventory
 
@@ -48,6 +57,15 @@
 | [src/scene.rs](../src/scene.rs) | `SceneChange`, `SceneDetectionConfig` — scene detection (`scene-detection`) |
 | [src/probe.rs](../src/probe.rs) | `MediaProbe` — lightweight stateless media file probing |
 | [src/thumbnail.rs](../src/thumbnail.rs) | `ThumbnailGenerator`, `ThumbnailConfig` — thumbnail generation helpers |
+| [src/keyframes.rs](../src/keyframes.rs) | `GopInfo`, `KeyframeInfo` — keyframe and GOP analysis |
+| [src/vfr.rs](../src/vfr.rs) | `VfrAnalysis` — variable frame rate detection |
+| [src/packet_iter.rs](../src/packet_iter.rs) | `PacketIterator`, `PacketInfo` — raw packet-level iteration |
+| [src/audio_iter.rs](../src/audio_iter.rs) | `AudioIterator`, `AudioChunk` — lazy audio sample iteration |
+| [src/gif.rs](../src/gif.rs) | `GifConfig` — animated GIF export (`gif`) |
+| [src/waveform.rs](../src/waveform.rs) | `WaveformConfig`, `WaveformData`, `WaveformBin` — audio waveform generation (`waveform`) |
+| [src/loudness.rs](../src/loudness.rs) | `LoudnessInfo` — audio loudness analysis (`loudness`) |
+| [src/transcode.rs](../src/transcode.rs) | `Transcoder` — audio transcoding/re-encoding (`transcode`) |
+| [src/video_writer.rs](../src/video_writer.rs) | `VideoWriter`, `VideoWriterConfig`, `VideoCodec` — video file encoding (`video-writer`) |
 
 ## Developer workflows
 - Build: `cargo build` (FFmpeg dev libraries must be installed; see README).
@@ -74,6 +92,16 @@
 | `parallel_extraction` | Parallel frame extraction (`parallel`) |
 | `scene_detection` | Scene change detection (`scene-detection`) |
 | `hw_acceleration` | Hardware-accelerated decoding (`hw-accel`) |
+| `gif_export` | Export video frames as animated GIF (`gif`) |
+| `waveform_analysis` | Generate audio waveform data (`waveform`) |
+| `loudness_analysis` | Analyze audio loudness levels (`loudness`) |
+| `audio_iterator` | Lazy audio sample iteration |
+| `write_video` | Encode image sequences into video files (`video-writer`) |
+| `transcode` | Re-encode audio between formats (`transcode`) |
+| `keyframe_analysis` | GOP/keyframe structure analysis |
+| `vfr_detection` | Variable frame rate detection |
+| `packet_inspect` | Raw packet-level demuxer inspection |
+| `subtitle_search` | Search subtitle text content |
 
 ### Test suites
 | Test file | Coverage |
@@ -97,6 +125,17 @@
 | `tests/segmented_extraction.rs` | FrameRange::Segments, multiple disjoint time ranges |
 | `tests/probing.rs` | MediaProbe, probe/probe_many, error handling |
 | `tests/thumbnail.rs` | ThumbnailGenerator, grid, smart selection, aspect ratio |
+| `tests/gif_export.rs` | GIF encoding, file and in-memory output (`gif`) |
+| `tests/waveform.rs` | WaveformConfig, bin statistics, time ranges (`waveform`) |
+| `tests/loudness.rs` | Peak/RMS loudness, dBFS values (`loudness`) |
+| `tests/audio_iter.rs` | AudioIterator, chunk iteration, sample rates |
+| `tests/video_writer.rs` | VideoWriter, codec selection, frame encoding (`video-writer`) |
+| `tests/transcode.rs` | Transcoder, format conversion, time ranges (`transcode`) |
+| `tests/keyframe_analysis.rs` | GopInfo, KeyframeInfo, GOP statistics |
+| `tests/vfr_analysis.rs` | VfrAnalysis, constant vs variable frame rate |
+| `tests/packet_iter.rs` | PacketIterator, PacketInfo, stream filtering |
+| `tests/subtitle_search.rs` | Subtitle search, case-insensitive matching |
+| `tests/metadata_extended.rs` | Extended metadata: video tracks, colorspace, HDR |
 
 ## Project-specific conventions and patterns
 - Metadata is extracted once at open; avoid recomputing stream properties if `MediaMetadata` already provides them.
@@ -128,6 +167,7 @@
 - FFmpeg is required at build/runtime and accessed through `ffmpeg-next` and `ffmpeg-sys-next`; use those crates for all media I/O and encoding.
 - `image` is used for `DynamicImage` outputs; avoid introducing alternative image types unless required.
 - `thiserror` is used for `UnbundleError` derive macros.
+- `log` is used for diagnostic logging; all modules emit `log::debug!` / `log::info!` at key entry points. Log macros are called fully qualified (`log::debug!(...)`) per the import rules.
 - Errors should be mapped into `UnbundleError` variants instead of bubbling raw FFmpeg errors.
 - Optional dependencies: `tokio`/`tokio-stream`/`futures-core` (async), `rayon`/`crossbeam-channel` (parallel).
 - Dev dependencies: `criterion` (benchmarks), `tempfile` (test I/O), `tokio` with `rt-multi-thread` (async tests).
@@ -449,7 +489,7 @@ criterion_group!(benches, bench_fn);  // NO! (unqualified call)
 
 **9.1 Feature Flags**
 - Feature-gated code uses `#[cfg(feature = "feature-name")]` on both module declarations in `lib.rs` and on public methods/types.
-- Available features: `async-tokio`, `parallel`, `hw-accel`, `scene-detection`, `full` (enables all).
+- Available features: `async-tokio`, `parallel`, `hw-accel`, `scene-detection`, `gif`, `waveform`, `loudness`, `transcode`, `video-writer`, `full` (enables all).
 - Default features are empty — the crate compiles with no optional dependencies by default.
 
 **9.2 Async (`async-tokio`)**
@@ -469,6 +509,31 @@ criterion_group!(benches, bench_fn);  // NO! (unqualified call)
 **9.5 Scene Detection (`scene-detection`)**
 - Uses FFmpeg's `scdet` filter graph for scene change detection.
 - Reads `lavfi.scd.score` from frame side data via unsafe `av_dict_get`.
+
+**9.6 GIF Export (`gif`)**
+- Uses the `gif` crate for animated GIF encoding.
+- `GifConfig` controls output width, frame delay, and repeat count.
+- Exposed via `VideoExtractor::export_gif` and `export_gif_to_memory`.
+
+**9.7 Waveform Generation (`waveform`)**
+- Decodes audio to mono f32, buckets samples into bins.
+- `WaveformConfig` controls bin count and optional time range.
+- Returns `WaveformData` with per-bin min/max/RMS amplitudes.
+
+**9.8 Loudness Analysis (`loudness`)**
+- Decodes entire audio track to mono f32.
+- Computes peak amplitude, RMS level, and dBFS equivalents.
+- Returns `LoudnessInfo`.
+
+**9.9 Audio Transcoding (`transcode`)**
+- `Transcoder` builder for re-encoding audio between formats.
+- Delegates to `AudioExtractor::save`/`save_range` internally.
+- Supports optional time range and bitrate configuration.
+
+**9.10 Video Writer (`video-writer`)**
+- `VideoWriter` encodes `DynamicImage` sequences into video files.
+- Supports H.264, H.265, and MPEG-4 codecs via `VideoCodec`.
+- `VideoWriterConfig` controls FPS, resolution, CRF, and bitrate.
 
 ### 10. Validation and Conversion Rules
 
@@ -499,3 +564,4 @@ When writing or reviewing code for `unbundle`, verify:
 - [ ] `_with_config` variants accept `ExtractionConfig`; convenience methods delegate with defaults
 - [ ] Async/parallel operations open fresh demuxers, not shared contexts
 - [ ] Cancellation checks appear in all decode loops
+- [ ] Key entry points emit `log::debug!` or `log::info!` (fully qualified, no import)

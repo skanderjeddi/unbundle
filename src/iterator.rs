@@ -74,10 +74,17 @@ impl<'a> FrameIterator<'a> {
         unbundler: &'a mut MediaUnbundler,
         frame_numbers: Vec<u64>,
         output_config: FrameOutputConfig,
+        stream_index: Option<usize>,
     ) -> Result<Self, UnbundleError> {
-        let video_stream_index = unbundler
-            .video_stream_index
+        let video_stream_index = stream_index
+            .or(unbundler.video_stream_index)
             .ok_or(UnbundleError::NoVideoStream)?;
+
+        log::debug!(
+            "Creating FrameIterator for {} frames (stream={})",
+            frame_numbers.len(),
+            video_stream_index,
+        );
 
         let video_metadata = unbundler
             .metadata

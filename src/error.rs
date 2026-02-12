@@ -102,6 +102,44 @@ pub enum UnbundleError {
     /// Subtitle data could not be decoded.
     #[error("Failed to decode subtitle: {0}")]
     SubtitleDecodeError(String),
+
+    /// GIF encoding failed.
+    #[cfg(feature = "gif")]
+    #[error("GIF encoding error: {0}")]
+    GifEncodeError(String),
+
+    /// Video encoding failed (used by the video writer and transcoder).
+    #[error("Video encoding error: {0}")]
+    VideoEncodeError(String),
+
+    /// Transcoding failed.
+    #[cfg(feature = "transcode")]
+    #[error("Transcode error: {0}")]
+    TranscodeError(String),
+
+    /// Video writer failed.
+    #[cfg(feature = "video-writer")]
+    #[error("Video write error: {0}")]
+    VideoWriteError(String),
+
+    /// Waveform generation failed.
+    #[cfg(feature = "waveform")]
+    #[error("Waveform decode error: {0}")]
+    WaveformDecodeError(String),
+
+    /// Loudness analysis failed.
+    #[cfg(feature = "loudness")]
+    #[error("Loudness analysis error: {0}")]
+    LoudnessError(String),
+
+    /// The requested video track index is out of range.
+    #[error("Video track {track_index} is out of range (file has {track_count} video tracks)")]
+    VideoTrackOutOfRange {
+        /// Requested track index.
+        track_index: usize,
+        /// Number of available video tracks.
+        track_count: usize,
+    },
 }
 
 impl From<FfmpegError> for UnbundleError {

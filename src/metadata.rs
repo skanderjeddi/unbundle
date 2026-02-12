@@ -5,6 +5,7 @@
 //! extracted once when the file is opened and cached for the lifetime of the
 //! unbundler.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 /// Complete metadata for a media file.
@@ -30,6 +31,11 @@ use std::time::Duration;
 pub struct MediaMetadata {
     /// Video stream metadata, if a video stream is present.
     pub video: Option<VideoMetadata>,
+    /// Metadata for all video tracks in the file.
+    ///
+    /// `None` if there are no video streams. When present, the first entry
+    /// matches [`video`](MediaMetadata::video) (the "best" stream).
+    pub video_tracks: Option<Vec<VideoMetadata>>,
     /// Audio stream metadata for the best (default) audio stream.
     pub audio: Option<AudioMetadata>,
     /// Metadata for all audio tracks in the file.
@@ -50,11 +56,16 @@ pub struct MediaMetadata {
     pub duration: Duration,
     /// Container format name (e.g. `"mp4"`, `"matroska"`, `"avi"`).
     pub format: String,
+    /// Container-level metadata tags (e.g. title, artist, album, date).
+    ///
+    /// `None` when the container has no metadata tags.
+    pub tags: Option<HashMap<String, String>>,
 }
 
 /// Metadata for a video stream.
 ///
-/// Includes dimensions, frame rate, estimated frame count, and codec name.
+/// Includes dimensions, frame rate, estimated frame count, codec name,
+/// and colorspace information.
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct VideoMetadata {
@@ -68,6 +79,22 @@ pub struct VideoMetadata {
     pub frame_count: u64,
     /// Codec name (e.g. `"h264"`, `"vp9"`, `"av1"`).
     pub codec: String,
+    /// Color space (e.g. `"BT709"`, `"BT2020NCL"`), if available.
+    pub color_space: Option<String>,
+    /// Color range (`"TV"` for limited, `"PC"` for full), if available.
+    pub color_range: Option<String>,
+    /// Color primaries (e.g. `"BT709"`, `"BT2020"`), if available.
+    pub color_primaries: Option<String>,
+    /// Color transfer characteristics (e.g. `"SMPTE2084"` for HDR10 PQ), if available.
+    pub color_transfer: Option<String>,
+    /// Bits per raw sample (e.g. 8, 10, 12), if available.
+    pub bits_per_raw_sample: Option<u32>,
+    /// Pixel format name (e.g. `"yuv420p"`, `"yuv420p10le"`), if available.
+    pub pixel_format_name: Option<String>,
+    /// Zero-based track number among all video streams in the file.
+    pub track_index: usize,
+    /// FFmpeg stream index within the container.
+    pub(crate) stream_index: usize,
 }
 
 /// Metadata for an audio stream.

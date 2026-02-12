@@ -18,7 +18,9 @@ use std::path::{Path, PathBuf};
 
 use ffmpeg_next::{codec::Id, media::Type};
 
+use crate::config::ExtractionConfig;
 use crate::error::UnbundleError;
+use crate::progress::{OperationType, ProgressTracker};
 
 /// Lossless container format converter.
 ///
@@ -118,6 +120,48 @@ impl Remuxer {
     /// Returns [`UnbundleError::FileOpen`] if the output cannot be created,
     /// or [`UnbundleError::FfmpegError`] if remuxing fails.
     pub fn run(&self) -> Result<(), UnbundleError> {
+        self.run_with_config(&ExtractionConfig::default())
+    }
+
+    /// Execute the remuxing operation with progress and cancellation support.
+    ///
+    /// Like [`run`](Remuxer::run) but accepts an [`ExtractionConfig`] for
+    /// progress callbacks and cooperative cancellation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::Cancelled`] if cancellation is requested,
+    /// or any error from [`run`](Remuxer::run).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::sync::Arc;
+    ///
+    /// use unbundle::{ExtractionConfig, ProgressCallback, ProgressInfo, Remuxer};
+    ///
+    /// struct PrintProgress;
+    /// impl ProgressCallback for PrintProgress {
+    ///     fn on_progress(&self, info: &ProgressInfo) {
+    ///         println!("Remuxed {} packets", info.current);
+    ///     }
+    /// }
+    ///
+    /// Remuxer::new("input.mkv", "output.mp4")?
+    ///     .run_with_config(
+    ///         &ExtractionConfig::new().with_progress(Arc::new(PrintProgress)),
+    ///     )?;
+    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// ```
+    pub fn run_with_config(&self, config: &ExtractionConfig) -> Result<(), UnbundleError> {
+        log::info!(
+            "Remuxing {} → {} (video={}, audio={}, subtitles={})",
+            self.input_path.display(),
+            self.output_path.display(),
+            self.copy_video,
+            self.copy_audio,
+            self.copy_subtitles,
+        );
         let mut input_context =
             ffmpeg_next::format::input(&self.input_path).map_err(|e| UnbundleError::FileOpen {
                 path: self.input_path.clone(),
@@ -164,8 +208,21 @@ impl Remuxer {
 
         output_context.write_header()?;
 
+        // Estimate total packets from the input duration (rough approximation).
+        let total_packets: Option<u64> = None;
+        let mut tracker = ProgressTracker::new(
+            config.progress.clone(),
+            OperationType::Remuxing,
+            total_packets,
+            config.batch_size,
+        );
+
         // Copy packets, remapping stream indices.
         for (stream, mut packet) in input_context.packets() {
+            if config.is_cancelled() {
+                return Err(UnbundleError::Cancelled);
+            }
+
             let input_idx = stream.index();
             let Some(output_idx) = stream_map.get(input_idx).copied().flatten() else {
                 continue;
@@ -178,7 +235,11 @@ impl Remuxer {
             packet.rescale_ts(input_time_base, output_time_base);
             packet.set_position(-1);
             packet.write_interleaved(&mut output_context)?;
+
+            tracker.advance(None, None);
         }
+
+        tracker.finish();
 
         output_context.write_trailer()?;
         Ok(())

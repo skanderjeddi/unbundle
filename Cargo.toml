@@ -1,6 +1,6 @@
 [package]
 name = "unbundle"
-version = "2.0.1"
+version = "3.0.0"
 edition = "2024"
 authors = ["Skander Jeddi <skanderjeddi@fastmail.com>"]
 description = "Unbundle media files - extract still frames, audio tracks, and subtitles from video files"
@@ -19,6 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 ffmpeg-next = "8"
 ffmpeg-sys-next = "8"
 image = "0.25"
+log = "0.4"
 thiserror = "2.0"
 
 # Optional: async support (feature = "async-tokio")
@@ -28,15 +29,22 @@ futures-core = { version = "0.3", optional = true }
 
 # Optional: parallel processing (feature = "parallel")
 rayon = { version = "1.11", optional = true }
-crossbeam-channel = { version = "0.5", optional = true }
+
+# Optional: GIF export (feature = "gif")
+gif = { version = "0.13", optional = true }
 
 [features]
 default = []
 async-tokio = ["tokio", "tokio-stream", "futures-core"]
-parallel = ["rayon", "crossbeam-channel"]
+parallel = ["rayon"]
 hw-accel = []
 scene-detection = []
-full = ["async-tokio", "parallel", "hw-accel", "scene-detection"]
+gif = ["dep:gif"]
+waveform = []
+loudness = []
+transcode = []
+video-writer = []
+full = ["async-tokio", "parallel", "hw-accel", "scene-detection", "gif", "waveform", "loudness", "transcode", "video-writer"]
 
 [dev-dependencies]
 criterion = "0.5"

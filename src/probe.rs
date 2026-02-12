@@ -57,6 +57,7 @@ impl MediaProbe {
     /// # Ok::<(), unbundle::UnbundleError>(())
     /// ```
     pub fn probe<P: AsRef<Path>>(path: P) -> Result<MediaMetadata, UnbundleError> {
+        log::debug!("Probing media file: {}", path.as_ref().display());
         let unbundler = MediaUnbundler::open(path)?;
         Ok(unbundler.metadata.clone())
     }

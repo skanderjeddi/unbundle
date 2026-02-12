@@ -21,6 +21,8 @@ use unbundle::SceneDetectionConfig;
 
 #[cfg(feature = "async-tokio")]
 use tokio::runtime::Runtime;
+#[cfg(feature = "async-tokio")]
+use tokio_stream::StreamExt;
 
 const SAMPLE_VIDEO: &str = "tests/fixtures/sample_video.mp4";
 const SAMPLE_MKV: &str = "tests/fixtures/sample_video.mkv";
@@ -334,7 +336,6 @@ fn benchmark_async(criterion: &mut Criterion) {
                     .frame_stream(FrameRange::Range(0, 9), config)
                     .unwrap();
 
-                use tokio_stream::StreamExt;
                 while let Some(result) = stream.next().await {
                     let _ = result.unwrap();
                 }

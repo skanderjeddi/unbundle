@@ -40,6 +40,7 @@ use std::time::{Duration, Instant};
 
 /// The kind of operation currently in progress.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum OperationType {
     /// Extracting video frames.
     FrameExtraction,
@@ -49,6 +50,20 @@ pub enum OperationType {
     SceneDetection,
     /// Validating / analysing a media file.
     Validation,
+    /// Remuxing (lossless container format conversion).
+    Remuxing,
+    /// Extracting subtitle entries.
+    SubtitleExtraction,
+    /// Transcoding (re-encoding) media.
+    Transcoding,
+    /// Generating thumbnails.
+    ThumbnailGeneration,
+    /// Exporting animated GIF.
+    GifExport,
+    /// Generating audio waveform data.
+    WaveformGeneration,
+    /// Analysing audio loudness levels.
+    LoudnessAnalysis,
 }
 
 /// A snapshot of extraction progress.

@@ -99,15 +99,22 @@
 //! platform-specific instructions.
 
 pub mod audio;
+pub mod audio_iter;
 #[cfg(feature = "async-tokio")]
 pub mod stream;
 pub mod config;
+#[cfg(feature = "gif")]
+pub mod gif;
 pub mod remux;
 pub mod error;
 pub mod iterator;
 #[cfg(feature = "hw-accel")]
 pub mod hw_accel;
+pub mod keyframes;
+#[cfg(feature = "loudness")]
+pub mod loudness;
 pub mod metadata;
+pub mod packet_iter;
 #[cfg(feature = "parallel")]
 mod parallel;
 pub mod probe;
@@ -116,27 +123,48 @@ pub mod progress;
 pub mod scene;
 pub mod subtitle;
 pub mod thumbnail;
+#[cfg(feature = "transcode")]
+pub mod transcode;
 pub mod unbundler;
 mod utilities;
 pub mod validation;
+pub mod vfr;
 pub mod video;
+#[cfg(feature = "video-writer")]
+pub mod video_writer;
+#[cfg(feature = "waveform")]
+pub mod waveform;
 
 #[cfg(feature = "async-tokio")]
 pub use stream::{AudioFuture, FrameStream};
 pub use audio::{AudioExtractor, AudioFormat};
+pub use audio_iter::{AudioChunk, AudioIterator};
 pub use config::{ExtractionConfig, FrameOutputConfig, PixelFormat};
+#[cfg(feature = "gif")]
+pub use gif::GifConfig;
 pub use remux::Remuxer;
 pub use error::UnbundleError;
 pub use iterator::FrameIterator;
 #[cfg(feature = "hw-accel")]
 pub use hw_accel::{HwAccelMode, HwDeviceType};
+pub use keyframes::{GopInfo, KeyframeInfo};
+#[cfg(feature = "loudness")]
+pub use loudness::LoudnessInfo;
 pub use metadata::{AudioMetadata, ChapterMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata};
+pub use packet_iter::{PacketInfo, PacketIterator};
 pub use probe::MediaProbe;
 pub use progress::{CancellationToken, OperationType, ProgressCallback, ProgressInfo};
 #[cfg(feature = "scene-detection")]
 pub use scene::{SceneChange, SceneDetectionConfig};
-pub use subtitle::{SubtitleEvent, SubtitleExtractor, SubtitleFormat};
+pub use subtitle::{BitmapSubtitleEvent, SubtitleEvent, SubtitleExtractor, SubtitleFormat};
 pub use thumbnail::{ThumbnailConfig, ThumbnailGenerator};
+#[cfg(feature = "transcode")]
+pub use transcode::Transcoder;
 pub use unbundler::MediaUnbundler;
 pub use validation::ValidationReport;
+pub use vfr::VfrAnalysis;
 pub use video::{FrameInfo, FrameRange, FrameType, VideoExtractor};
+#[cfg(feature = "video-writer")]
+pub use video_writer::{VideoCodec, VideoWriter, VideoWriterConfig};
+#[cfg(feature = "waveform")]
+pub use waveform::{WaveformBin, WaveformConfig, WaveformData};
