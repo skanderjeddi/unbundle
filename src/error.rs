@@ -23,7 +23,7 @@ pub enum UnbundleError {
     /// The media file could not be opened.
     #[error("Failed to open media file at {path}: {reason}")]
     FileOpen {
-        /// Path that was passed to [`crate::MediaUnbundler::open`].
+        /// Path that was passed to [`crate::MediaFile::open`].
         path: PathBuf,
         /// Underlying reason the open failed.
         reason: String,
@@ -118,7 +118,7 @@ pub enum UnbundleError {
     TranscodeError(String),
 
     /// Video writer failed.
-    #[cfg(feature = "video-writer")]
+    #[cfg(feature = "encode")]
     #[error("Video write error: {0}")]
     VideoWriteError(String),
 

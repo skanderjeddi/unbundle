@@ -1,12 +1,12 @@
-//! Async frame and audio extraction example (feature = "async-tokio").
+//! Async frame and audio extraction example (feature = "async").
 //!
 //! Usage:
-//!   cargo run --features=async-tokio --example async_extraction -- <input_file>
+//!   cargo run --features=async --example async_extraction -- <input_file>
 
 use std::error::Error;
 
 use tokio_stream::StreamExt;
-use unbundle::{AudioFormat, ExtractionConfig, FrameRange, MediaUnbundler};
+use unbundle::{AudioFormat, ExtractOptions, FrameRange, MediaFile};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -15,11 +15,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|| "input.mp4".to_string());
 
     println!("Opening {input_path}...");
-    let mut unbundler = MediaUnbundler::open(&input_path)?;
+    let mut unbundler = MediaFile::open(&input_path)?;
 
     // --- Async frame stream ---------------------------------------------------
     let range = FrameRange::Range(0, 29);
-    let config = ExtractionConfig::new();
+    let config = ExtractOptions::new();
 
     println!("Streaming frames 0–29...");
     let mut stream = unbundler.video().frame_stream(range, config)?;
@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Extracting audio asynchronously...");
     let audio_bytes = unbundler
         .audio()
-        .extract_async(AudioFormat::Wav, ExtractionConfig::new())?
+        .extract_async(AudioFormat::Wav, ExtractOptions::new())?
         .await?;
     println!("Got {} bytes of WAV audio", audio_bytes.len());
 

@@ -9,29 +9,29 @@ use std::time::Duration;
 use image::{DynamicImage, GenericImage};
 use image::imageops::FilterType;
 
-use crate::config::ExtractionConfig;
+use crate::configuration::ExtractOptions;
 use crate::error::UnbundleError;
-use crate::unbundler::MediaUnbundler;
+use crate::unbundle::MediaFile;
 use crate::video::FrameRange;
 
-/// Configuration for thumbnail grid generation.
+/// Options for thumbnail grid generation.
 ///
 /// Controls grid layout, thumbnail dimensions, and spacing.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use unbundle::{MediaUnbundler, ThumbnailConfig};
+/// use unbundle::{MediaFile, ThumbnailHandle, ThumbnailOptions, UnbundleError};
 ///
-/// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-/// let config = ThumbnailConfig::new(4, 4).with_thumbnail_width(320);
-/// let grid = unbundle::ThumbnailGenerator::grid(&mut unbundler, &config)?;
+/// let mut unbundler = MediaFile::open("input.mp4")?;
+/// let config = ThumbnailOptions::new(4, 4).with_thumbnail_width(320);
+/// let grid = ThumbnailHandle::grid(&mut unbundler, &config)?;
 /// grid.save("contact_sheet.png")?;
-/// # Ok::<(), unbundle::UnbundleError>(())
+/// # Ok::<(), UnbundleError>(())
 /// ```
 #[derive(Debug, Clone)]
 #[must_use]
-pub struct ThumbnailConfig {
+pub struct ThumbnailOptions {
     /// Number of columns in the grid.
     pub columns: u32,
     /// Number of rows in the grid.
@@ -42,8 +42,8 @@ pub struct ThumbnailConfig {
     pub thumbnail_width: u32,
 }
 
-impl ThumbnailConfig {
-    /// Create a new thumbnail grid configuration.
+impl ThumbnailOptions {
+    /// Create new thumbnail options.
     ///
     /// `columns` and `rows` define the grid dimensions. Thumbnail width
     /// defaults to 320 pixels.
@@ -67,32 +67,34 @@ impl ThumbnailConfig {
 /// Thumbnail generation utilities.
 ///
 /// All methods are stateless functions that accept a
-/// [`MediaUnbundler`] reference.
+/// [`MediaFile`] reference.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use unbundle::{MediaUnbundler, ThumbnailConfig, ThumbnailGenerator};
+/// use std::time::Duration;
+/// 
+/// use unbundle::{MediaFile, ThumbnailHandle, ThumbnailOptions, UnbundleError};
 ///
-/// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+/// let mut unbundler = MediaFile::open("input.mp4")?;
 ///
 /// // Single thumbnail at 10 seconds, max 640px on longest edge
-/// let thumb = ThumbnailGenerator::at_timestamp(
+/// let thumb = ThumbnailHandle::at_timestamp(
 ///     &mut unbundler,
-///     std::time::Duration::from_secs(10),
+///     Duration::from_secs(10),
 ///     640,
 /// )?;
 /// thumb.save("thumb.jpg")?;
 ///
 /// // Contact-sheet grid
-/// let config = ThumbnailConfig::new(4, 4);
-/// let grid = ThumbnailGenerator::grid(&mut unbundler, &config)?;
+/// let config = ThumbnailOptions::new(4, 4);
+/// let grid = ThumbnailHandle::grid(&mut unbundler, &config)?;
 /// grid.save("grid.png")?;
-/// # Ok::<(), unbundle::UnbundleError>(())
+/// # Ok::<(), UnbundleError>(())
 /// ```
-pub struct ThumbnailGenerator;
+pub struct ThumbnailHandle;
 
-impl ThumbnailGenerator {
+impl ThumbnailHandle {
     /// Extract a single thumbnail at a timestamp, scaled to fit within
     /// `max_dimension` on its longest edge.
     ///
@@ -105,7 +107,7 @@ impl ThumbnailGenerator {
     /// [`UnbundleError::InvalidTimestamp`] if the timestamp exceeds the
     /// duration, or decoding errors.
     pub fn at_timestamp(
-        unbundler: &mut MediaUnbundler,
+        unbundler: &mut MediaFile,
         timestamp: Duration,
         max_dimension: u32,
     ) -> Result<DynamicImage, UnbundleError> {
@@ -126,9 +128,9 @@ impl ThumbnailGenerator {
     ///
     /// # Errors
     ///
-    /// Same as [`at_timestamp`](ThumbnailGenerator::at_timestamp).
+    /// Same as [`at_timestamp`](ThumbnailHandle::at_timestamp).
     pub fn at_frame(
-        unbundler: &mut MediaUnbundler,
+        unbundler: &mut MediaFile,
         frame_number: u64,
         max_dimension: u32,
     ) -> Result<DynamicImage, UnbundleError> {
@@ -157,29 +159,29 @@ impl ThumbnailGenerator {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{MediaUnbundler, ThumbnailConfig, ThumbnailGenerator};
+    /// use unbundle::{MediaFile, ThumbnailHandle, ThumbnailOptions, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let config = ThumbnailConfig::new(4, 4).with_thumbnail_width(240);
-    /// let grid = ThumbnailGenerator::grid(&mut unbundler, &config)?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let config = ThumbnailOptions::new(4, 4).with_thumbnail_width(240);
+    /// let grid = ThumbnailHandle::grid(&mut unbundler, &config)?;
     /// grid.save("contact_sheet.png")?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn grid(
-        unbundler: &mut MediaUnbundler,
-        config: &ThumbnailConfig,
+        unbundler: &mut MediaFile,
+        config: &ThumbnailOptions,
     ) -> Result<DynamicImage, UnbundleError> {
-        Self::grid_with_config(unbundler, config, &ExtractionConfig::default())
+        Self::grid_with_options(unbundler, config, &ExtractOptions::default())
     }
 
     /// Generate a thumbnail grid with progress/cancellation support.
     ///
-    /// Like [`grid`](ThumbnailGenerator::grid) but accepts an
-    /// [`ExtractionConfig`] for progress callbacks and cancellation.
-    pub fn grid_with_config(
-        unbundler: &mut MediaUnbundler,
-        config: &ThumbnailConfig,
-        extraction_config: &ExtractionConfig,
+    /// Like [`grid`](ThumbnailHandle::grid) but accepts an
+    /// [`ExtractOptions`] for progress callbacks and cancellation.
+    pub fn grid_with_options(
+        unbundler: &mut MediaFile,
+        config: &ThumbnailOptions,
+        extraction_config: &ExtractOptions,
     ) -> Result<DynamicImage, UnbundleError> {
         log::debug!("Generating {}x{} thumbnail grid (thumb_width={})", config.columns, config.rows, config.thumbnail_width);
         let video_metadata = unbundler
@@ -203,7 +205,7 @@ impl ThumbnailGenerator {
             .filter(|number| *number < frame_count)
             .collect();
 
-        let frames = unbundler.video().frames_with_config(
+        let frames = unbundler.video().frames_with_options(
             FrameRange::Specific(frame_numbers),
             extraction_config,
         )?;
@@ -258,35 +260,35 @@ impl ThumbnailGenerator {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{MediaUnbundler, ThumbnailGenerator};
+    /// use unbundle::{MediaFile, ThumbnailHandle, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let thumb = ThumbnailGenerator::smart(&mut unbundler, 20, 640)?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let thumb = ThumbnailHandle::smart(&mut unbundler, 20, 640)?;
     /// thumb.save("smart_thumb.jpg")?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn smart(
-        unbundler: &mut MediaUnbundler,
+        unbundler: &mut MediaFile,
         sample_count: u32,
         max_dimension: u32,
     ) -> Result<DynamicImage, UnbundleError> {
-        Self::smart_with_config(
+        Self::smart_with_options(
             unbundler,
             sample_count,
             max_dimension,
-            &ExtractionConfig::default(),
+            &ExtractOptions::default(),
         )
     }
 
     /// Extract a smart thumbnail with progress/cancellation support.
     ///
-    /// Like [`smart`](ThumbnailGenerator::smart) but accepts an
-    /// [`ExtractionConfig`] for progress callbacks and cancellation.
-    pub fn smart_with_config(
-        unbundler: &mut MediaUnbundler,
+    /// Like [`smart`](ThumbnailHandle::smart) but accepts an
+    /// [`ExtractOptions`] for progress callbacks and cancellation.
+    pub fn smart_with_options(
+        unbundler: &mut MediaFile,
         sample_count: u32,
         max_dimension: u32,
-        extraction_config: &ExtractionConfig,
+        extraction_config: &ExtractOptions,
     ) -> Result<DynamicImage, UnbundleError> {
         log::debug!("Generating smart thumbnail (samples={}, max_dim={})", sample_count, max_dimension);
         let video_metadata = unbundler
@@ -311,7 +313,7 @@ impl ThumbnailGenerator {
 
         // Extract with a small resolution for fast variance computation.
         // We use the caller's config for cancellation/progress support.
-        let frames = unbundler.video().frames_with_config(
+        let frames = unbundler.video().frames_with_options(
             FrameRange::Specific(frame_numbers.clone()),
             extraction_config,
         )?;

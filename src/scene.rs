@@ -3,20 +3,20 @@
 //! Uses FFmpeg's `scdet` filter to detect scene changes (shot boundaries)
 //! in a video stream. Results are returned as timestamps and frame numbers.
 //!
-//! This module is available when the `scene-detection` feature is enabled.
+//! This module is available when the `scene` feature is enabled.
 //!
 //! # Example
 //!
 //! ```no_run
-//! use unbundle::MediaUnbundler;
+//! use unbundle::{MediaFile, UnbundleError};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4")?;
+//! let mut unbundler = MediaFile::open("input.mp4")?;
 //! let scenes = unbundler.video().detect_scenes(None)?;
 //! for scene in &scenes {
 //!     println!("Scene at {:?} (frame {}), score {:.2}",
 //!         scene.timestamp, scene.frame_number, scene.score);
 //! }
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::ffi::CStr;
@@ -28,7 +28,7 @@ use ffmpeg_next::{
     frame::Video as VideoFrame,
 };
 
-use crate::{error::UnbundleError, metadata::VideoMetadata, unbundler::MediaUnbundler};
+use crate::{error::UnbundleError, metadata::VideoMetadata, unbundle::MediaFile};
 
 /// A detected scene change.
 ///
@@ -51,7 +51,7 @@ pub struct SceneChange {
 /// Controls the sensitivity of the scene-change detector. The default
 /// threshold of 10.0 works well for most content.
 #[derive(Debug, Clone)]
-pub struct SceneDetectionConfig {
+pub struct SceneDetectionOptions {
     /// Minimum score for a frame to be considered a scene change.
     ///
     /// Range 0.0–100.0. Lower values detect more (weaker) cuts; higher
@@ -59,7 +59,7 @@ pub struct SceneDetectionConfig {
     pub threshold: f64,
 }
 
-impl Default for SceneDetectionConfig {
+impl Default for SceneDetectionOptions {
     fn default() -> Self {
         Self { threshold: 10.0 }
     }
@@ -67,12 +67,12 @@ impl Default for SceneDetectionConfig {
 
 /// Detect scene changes in the video stream.
 ///
-/// This function is called internally by [`VideoExtractor::detect_scenes`]
-/// (and [`VideoExtractor::detect_scenes_with_config`]).
+/// This function is called internally by [`VideoHandle::detect_scenes`]
+/// (and [`VideoHandle::detect_scenes_with_options`]).
 pub(crate) fn detect_scenes_impl(
-    unbundler: &mut MediaUnbundler,
+    unbundler: &mut MediaFile,
     video_metadata: &VideoMetadata,
-    config: &SceneDetectionConfig,
+    config: &SceneDetectionOptions,
     cancel_check: Option<&dyn Fn() -> bool>,
     stream_index: Option<usize>,
 ) -> Result<Vec<SceneChange>, UnbundleError> {
@@ -188,9 +188,9 @@ pub(crate) fn detect_scenes_impl(
                 if let Some(score) = score.filter(|&s| s >= config.threshold) {
                     let pts = filtered_frame.pts().unwrap_or(0);
                     let timestamp = Duration::from_secs_f64(
-                        crate::utilities::pts_to_seconds(pts, time_base),
+                        crate::conversion::pts_to_seconds(pts, time_base),
                     );
-                    let frame_number = crate::utilities::pts_to_frame_number(
+                    let frame_number = crate::conversion::pts_to_frame_number(
                         pts,
                         time_base,
                         frames_per_second,
@@ -252,9 +252,9 @@ pub(crate) fn detect_scenes_impl(
         if let Some(score) = score.filter(|&s| s >= config.threshold) {
             let pts = filtered_frame.pts().unwrap_or(0);
             let timestamp =
-                Duration::from_secs_f64(crate::utilities::pts_to_seconds(pts, time_base));
+                Duration::from_secs_f64(crate::conversion::pts_to_seconds(pts, time_base));
             let frame_number =
-                crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
             scenes.push(SceneChange {
                 timestamp,

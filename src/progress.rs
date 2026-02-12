@@ -10,8 +10,8 @@
 //! use std::sync::Arc;
 //!
 //! use unbundle::{
-//!     CancellationToken, ExtractionConfig, FrameRange, MediaUnbundler,
-//!     OperationType, ProgressCallback, ProgressInfo,
+//!     CancellationToken, ExtractOptions, FrameRange, MediaFile,
+//!     OperationType, ProgressCallback, ProgressInfo, UnbundleError,
 //! };
 //!
 //! struct PrintProgress;
@@ -24,15 +24,15 @@
 //!     }
 //! }
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4")?;
-//! let config = ExtractionConfig::new()
+//! let mut unbundler = MediaFile::open("input.mp4")?;
+//! let config = ExtractOptions::new()
 //!     .with_progress(Arc::new(PrintProgress));
 //!
-//! let frames = unbundler.video().frames_with_config(
+//! let frames = unbundler.video().frames_with_options(
 //!     FrameRange::Range(0, 99),
 //!     &config,
 //! )?;
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
@@ -69,7 +69,7 @@ pub enum OperationType {
 /// A snapshot of extraction progress.
 ///
 /// Delivered to [`ProgressCallback::on_progress`] at a cadence controlled
-/// by [`ExtractionConfig::batch_size`](crate::ExtractionConfig).
+/// by [`ExtractOptions::batch_size`](crate::ExtractOptions).
 #[derive(Debug, Clone)]
 pub struct ProgressInfo {
     /// What kind of work is being performed.

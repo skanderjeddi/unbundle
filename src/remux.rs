@@ -7,18 +7,18 @@
 //! # Example
 //!
 //! ```no_run
-//! use unbundle::Remuxer;
+//! use unbundle::{Remuxer, UnbundleError};
 //!
 //! // Convert MKV to MP4 without re-encoding
 //! Remuxer::new("input.mkv", "output.mp4")?.run()?;
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::path::{Path, PathBuf};
 
 use ffmpeg_next::{codec::Id, media::Type};
 
-use crate::config::ExtractionConfig;
+use crate::configuration::ExtractOptions;
 use crate::error::UnbundleError;
 use crate::progress::{OperationType, ProgressTracker};
 
@@ -37,12 +37,12 @@ use crate::progress::{OperationType, ProgressTracker};
 /// # Example
 ///
 /// ```no_run
-/// use unbundle::Remuxer;
+/// use unbundle::{Remuxer, UnbundleError};
 ///
 /// Remuxer::new("input.mkv", "output.mp4")?
 ///     .exclude_subtitles()
 ///     .run()?;
-/// # Ok::<(), unbundle::UnbundleError>(())
+/// # Ok::<(), UnbundleError>(())
 /// ```
 pub struct Remuxer {
     input_path: PathBuf,
@@ -120,12 +120,12 @@ impl Remuxer {
     /// Returns [`UnbundleError::FileOpen`] if the output cannot be created,
     /// or [`UnbundleError::FfmpegError`] if remuxing fails.
     pub fn run(&self) -> Result<(), UnbundleError> {
-        self.run_with_config(&ExtractionConfig::default())
+        self.run_with_options(&ExtractOptions::default())
     }
 
     /// Execute the remuxing operation with progress and cancellation support.
     ///
-    /// Like [`run`](Remuxer::run) but accepts an [`ExtractionConfig`] for
+    /// Like [`run`](Remuxer::run) but accepts an [`ExtractOptions`] for
     /// progress callbacks and cooperative cancellation.
     ///
     /// # Errors
@@ -138,7 +138,7 @@ impl Remuxer {
     /// ```no_run
     /// use std::sync::Arc;
     ///
-    /// use unbundle::{ExtractionConfig, ProgressCallback, ProgressInfo, Remuxer};
+    /// use unbundle::{ExtractOptions, ProgressCallback, ProgressInfo, Remuxer, UnbundleError};
     ///
     /// struct PrintProgress;
     /// impl ProgressCallback for PrintProgress {
@@ -148,12 +148,12 @@ impl Remuxer {
     /// }
     ///
     /// Remuxer::new("input.mkv", "output.mp4")?
-    ///     .run_with_config(
-    ///         &ExtractionConfig::new().with_progress(Arc::new(PrintProgress)),
+    ///     .run_with_options(
+    ///         &ExtractOptions::new().with_progress(Arc::new(PrintProgress)),
     ///     )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn run_with_config(&self, config: &ExtractionConfig) -> Result<(), UnbundleError> {
+    pub fn run_with_options(&self, config: &ExtractOptions) -> Result<(), UnbundleError> {
         log::info!(
             "Remuxing {} → {} (video={}, audio={}, subtitles={})",
             self.input_path.display(),

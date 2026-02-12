@@ -7,13 +7,13 @@
 //! # Example
 //!
 //! ```no_run
-//! use unbundle::MediaUnbundler;
+//! use unbundle::{MediaFile, UnbundleError};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4")?;
+//! let mut unbundler = MediaFile::open("input.mp4")?;
 //! let loudness = unbundler.audio().analyze_loudness()?;
 //! println!("Peak: {:.2} dBFS, RMS: {:.2} dBFS",
 //!     loudness.peak_dbfs, loudness.rms_dbfs);
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::time::Duration;
@@ -25,7 +25,7 @@ use ffmpeg_next::frame::Audio as AudioFrame;
 use ffmpeg_next::software::resampling::Context as ResamplingContext;
 
 use crate::error::UnbundleError;
-use crate::unbundler::MediaUnbundler;
+use crate::unbundle::MediaFile;
 
 /// Audio loudness statistics.
 #[derive(Debug, Clone, Copy)]
@@ -46,7 +46,7 @@ pub struct LoudnessInfo {
 
 /// Decode audio to mono f32 and compute loudness statistics.
 pub(crate) fn analyze_loudness_impl(
-    unbundler: &mut MediaUnbundler,
+    unbundler: &mut MediaFile,
     audio_stream_index: usize,
 ) -> Result<LoudnessInfo, UnbundleError> {
     log::debug!("Analyzing loudness (stream={})", audio_stream_index);

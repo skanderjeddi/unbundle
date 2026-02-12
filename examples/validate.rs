@@ -5,14 +5,14 @@
 
 use std::error::Error;
 
-use unbundle::MediaUnbundler;
+use unbundle::MediaFile;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "input.mp4".to_string());
 
-    let unbundler = MediaUnbundler::open(&input_path)?;
+    let unbundler = MediaFile::open(&input_path)?;
 
     let report = unbundler.validate();
 

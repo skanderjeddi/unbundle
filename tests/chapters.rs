@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use unbundle::MediaUnbundler;
+use unbundle::MediaFile;
 
 fn sample_with_chapters_path() -> &'static str {
     "tests/fixtures/sample_with_chapters.mkv"
@@ -23,7 +23,7 @@ fn chapters_present_in_file_with_chapters() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let unbundler = MediaFile::open(path).expect("Failed to open");
     let metadata = unbundler.metadata();
     let chapters = metadata
         .chapters
@@ -41,7 +41,7 @@ fn chapter_titles_match() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let unbundler = MediaFile::open(path).expect("Failed to open");
     let chapters = unbundler
         .metadata()
         .chapters
@@ -62,7 +62,7 @@ fn chapter_timestamps_are_ordered() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let unbundler = MediaFile::open(path).expect("Failed to open");
     let chapters = unbundler
         .metadata()
         .chapters
@@ -88,7 +88,7 @@ fn chapter_indices_are_sequential() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let unbundler = MediaFile::open(path).expect("Failed to open");
     let chapters = unbundler
         .metadata()
         .chapters
@@ -109,7 +109,7 @@ fn no_chapters_in_file_without() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let unbundler = MediaFile::open(path).expect("Failed to open");
     assert!(
         unbundler.metadata().chapters.is_none(),
         "sample_video.mp4 should have no chapters"
@@ -124,7 +124,7 @@ fn chapter_start_end_durations() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let unbundler = MediaFile::open(path).expect("Failed to open");
     let chapters = unbundler
         .metadata()
         .chapters

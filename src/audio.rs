@@ -1,6 +1,6 @@
 //! Audio extraction.
 //!
-//! This module provides [`AudioExtractor`] for extracting audio tracks from
+//! This module provides [`AudioHandle`] for extracting audio tracks from
 //! media files, and [`AudioFormat`] for specifying the output encoding.
 //! Audio can be extracted to memory as `Vec<u8>` or written directly to a file.
 
@@ -20,10 +20,17 @@ use ffmpeg_next::{
 };
 use ffmpeg_sys_next::{AVFormatContext, AVRational};
 
-use crate::{config::ExtractionConfig, error::UnbundleError, unbundler::MediaUnbundler};
+use crate::{configuration::ExtractOptions, error::UnbundleError, unbundle::MediaFile};
+use crate::audio_iterator::AudioIterator;
 
-#[cfg(feature = "async-tokio")]
+#[cfg(feature = "loudness")]
+use crate::loudness::LoudnessInfo;
+
+#[cfg(feature = "async")]
 use crate::stream::AudioFuture;
+
+#[cfg(feature = "waveform")]
+use crate::waveform::{WaveformData, WaveformOptions};
 
 /// Audio output format.
 ///
@@ -76,16 +83,16 @@ impl AudioFormat {
 
 /// Audio extraction operations.
 ///
-/// Obtained via [`MediaUnbundler::audio`] or
-/// [`MediaUnbundler::audio_track`]. Provides methods for extracting
+/// Obtained via [`MediaFile::audio`] or
+/// [`MediaFile::audio_track`]. Provides methods for extracting
 /// complete audio tracks or segments, either to memory or to files.
-pub struct AudioExtractor<'a> {
-    pub(crate) unbundler: &'a mut MediaUnbundler,
+pub struct AudioHandle<'a> {
+    pub(crate) unbundler: &'a mut MediaFile,
     /// Which audio stream to extract. `None` means "use default".
     pub(crate) stream_index: Option<usize>,
 }
 
-impl<'a> AudioExtractor<'a> {
+impl<'a> AudioHandle<'a> {
     /// Resolve the audio stream index, falling back to the unbundler's default.
     fn resolve_stream_index(&self) -> Result<usize, UnbundleError> {
         self.stream_index
@@ -106,12 +113,12 @@ impl<'a> AudioExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{AudioFormat, MediaUnbundler};
+    /// use unbundle::{AudioFormat, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let audio_bytes = unbundler.audio().extract(AudioFormat::Wav)?;
     /// println!("Extracted {} bytes", audio_bytes.len());
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn extract(&mut self, format: AudioFormat) -> Result<Vec<u8>, UnbundleError> {
         self.extract_audio_to_memory(format, None, None, None)
@@ -123,7 +130,7 @@ impl<'a> AudioExtractor<'a> {
     ///
     /// # Errors
     ///
-    /// Returns errors from [`extract`](AudioExtractor::extract), plus
+    /// Returns errors from [`extract`](AudioHandle::extract), plus
     /// [`UnbundleError::InvalidTimestamp`] if either timestamp exceeds the
     /// media duration.
     ///
@@ -132,15 +139,15 @@ impl<'a> AudioExtractor<'a> {
     /// ```no_run
     /// use std::time::Duration;
     ///
-    /// use unbundle::{AudioFormat, MediaUnbundler};
+    /// use unbundle::{AudioFormat, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let segment = unbundler.audio().extract_range(
     ///     Duration::from_secs(10),
     ///     Duration::from_secs(20),
     ///     AudioFormat::Mp3,
     /// )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn extract_range(
         &mut self,
@@ -170,11 +177,11 @@ impl<'a> AudioExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{AudioFormat, MediaUnbundler};
+    /// use unbundle::{AudioFormat, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// unbundler.audio().save("output.wav", AudioFormat::Wav)?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn save<P: AsRef<Path>>(
         &mut self,
@@ -188,7 +195,7 @@ impl<'a> AudioExtractor<'a> {
     ///
     /// # Errors
     ///
-    /// Returns errors from [`save`](AudioExtractor::save), plus
+    /// Returns errors from [`save`](AudioHandle::save), plus
     /// [`UnbundleError::InvalidTimestamp`] if either timestamp exceeds the
     /// media duration.
     ///
@@ -197,16 +204,16 @@ impl<'a> AudioExtractor<'a> {
     /// ```no_run
     /// use std::time::Duration;
     ///
-    /// use unbundle::{AudioFormat, MediaUnbundler};
+    /// use unbundle::{AudioFormat, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// unbundler.audio().save_range(
     ///     "segment.mp3",
     ///     Duration::from_secs(30),
     ///     Duration::from_secs(60),
     ///     AudioFormat::Mp3,
     /// )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn save_range<P: AsRef<Path>>(
         &mut self,
@@ -226,50 +233,50 @@ impl<'a> AudioExtractor<'a> {
 
     /// Extract the complete audio track to memory with cancellation support.
     ///
-    /// Like [`extract`](AudioExtractor::extract) but accepts an
-    /// [`ExtractionConfig`] for cancellation.
+    /// Like [`extract`](AudioHandle::extract) but accepts an
+    /// [`ExtractOptions`] for cancellation.
     ///
     /// # Errors
     ///
     /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
-    /// any error from [`extract`](AudioExtractor::extract).
+    /// any error from [`extract`](AudioHandle::extract).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{AudioFormat, CancellationToken, ExtractionConfig, MediaUnbundler};
+    /// use unbundle::{AudioFormat, CancellationToken, ExtractOptions, MediaFile, UnbundleError};
     ///
     /// let token = CancellationToken::new();
-    /// let config = ExtractionConfig::new()
+    /// let config = ExtractOptions::new()
     ///     .with_cancellation(token.clone());
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let audio = unbundler.audio().extract_with_config(AudioFormat::Wav, &config)?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let audio = unbundler.audio().extract_with_options(AudioFormat::Wav, &config)?;
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn extract_with_config(
+    pub fn extract_with_options(
         &mut self,
         format: AudioFormat,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
     ) -> Result<Vec<u8>, UnbundleError> {
         self.extract_audio_to_memory(format, None, None, Some(config))
     }
 
     /// Extract an audio segment to memory with cancellation support.
     ///
-    /// Like [`extract_range`](AudioExtractor::extract_range) but accepts an
-    /// [`ExtractionConfig`].
+    /// Like [`extract_range`](AudioHandle::extract_range) but accepts an
+    /// [`ExtractOptions`].
     ///
     /// # Errors
     ///
     /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
-    /// any error from [`extract_range`](AudioExtractor::extract_range).
-    pub fn extract_range_with_config(
+    /// any error from [`extract_range`](AudioHandle::extract_range).
+    pub fn extract_range_with_options(
         &mut self,
         start: Duration,
         end: Duration,
         format: AudioFormat,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
     ) -> Result<Vec<u8>, UnbundleError> {
         if start >= end {
             return Err(UnbundleError::InvalidRange {
@@ -282,38 +289,38 @@ impl<'a> AudioExtractor<'a> {
 
     /// Save the complete audio track to a file with cancellation support.
     ///
-    /// Like [`save`](AudioExtractor::save) but accepts an
-    /// [`ExtractionConfig`].
+    /// Like [`save`](AudioHandle::save) but accepts an
+    /// [`ExtractOptions`].
     ///
     /// # Errors
     ///
     /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
-    /// any error from [`save`](AudioExtractor::save).
-    pub fn save_with_config<P: AsRef<Path>>(
+    /// any error from [`save`](AudioHandle::save).
+    pub fn save_with_options<P: AsRef<Path>>(
         &mut self,
         path: P,
         format: AudioFormat,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
     ) -> Result<(), UnbundleError> {
         self.save_audio_to_file(path.as_ref(), format, None, None, Some(config))
     }
 
     /// Save an audio segment to a file with cancellation support.
     ///
-    /// Like [`save_range`](AudioExtractor::save_range) but accepts an
-    /// [`ExtractionConfig`].
+    /// Like [`save_range`](AudioHandle::save_range) but accepts an
+    /// [`ExtractOptions`].
     ///
     /// # Errors
     ///
     /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
-    /// any error from [`save_range`](AudioExtractor::save_range).
-    pub fn save_range_with_config<P: AsRef<Path>>(
+    /// any error from [`save_range`](AudioHandle::save_range).
+    pub fn save_range_with_options<P: AsRef<Path>>(
         &mut self,
         path: P,
         start: Duration,
         end: Duration,
         format: AudioFormat,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
     ) -> Result<(), UnbundleError> {
         if start >= end {
             return Err(UnbundleError::InvalidRange {
@@ -338,20 +345,20 @@ impl<'a> AudioExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{MediaUnbundler, WaveformConfig};
+    /// use unbundle::{MediaFile, UnbundleError, WaveformOptions};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let waveform = unbundler.audio().generate_waveform(
-    ///     &WaveformConfig::new().bins(1000),
+    ///     &WaveformOptions::new().bins(1000),
     /// )?;
     /// println!("Waveform bins: {}", waveform.bins.len());
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     #[cfg(feature = "waveform")]
     pub fn generate_waveform(
         &mut self,
-        config: &crate::waveform::WaveformConfig,
-    ) -> Result<crate::waveform::WaveformData, UnbundleError> {
+        config: &WaveformOptions,
+    ) -> Result<WaveformData, UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
         crate::waveform::generate_waveform_impl(self.unbundler, audio_stream_index, config)
     }
@@ -369,17 +376,17 @@ impl<'a> AudioExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let loudness = unbundler.audio().analyze_loudness()?;
     /// println!("Peak: {:.1} dBFS", loudness.peak_dbfs);
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     #[cfg(feature = "loudness")]
     pub fn analyze_loudness(
         &mut self,
-    ) -> Result<crate::loudness::LoudnessInfo, UnbundleError> {
+    ) -> Result<LoudnessInfo, UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
         crate::loudness::analyze_loudness_impl(self.unbundler, audio_stream_index)
     }
@@ -401,20 +408,20 @@ impl<'a> AudioExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let iter = unbundler.audio().sample_iter()?;
     /// let mut total = 0u64;
     /// for chunk in iter {
     ///     total += chunk?.samples.len() as u64;
     /// }
     /// println!("Total mono samples: {total}");
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn sample_iter(self) -> Result<crate::audio_iter::AudioIterator<'a>, UnbundleError> {
+    pub fn sample_iter(self) -> Result<AudioIterator<'a>, UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
-        crate::audio_iter::AudioIterator::new(self.unbundler, audio_stream_index)
+        AudioIterator::new(self.unbundler, audio_stream_index)
     }
 
     // ── Private helpers ────────────────────────────────────────────────
@@ -429,7 +436,7 @@ impl<'a> AudioExtractor<'a> {
         format: AudioFormat,
         start: Option<Duration>,
         end: Option<Duration>,
-        config: Option<&ExtractionConfig>,
+        config: Option<&ExtractOptions>,
     ) -> Result<Vec<u8>, UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
         log::debug!("Extracting audio to memory (format={}, stream={})", format, audio_stream_index);
@@ -484,7 +491,7 @@ impl<'a> AudioExtractor<'a> {
         // Seek to start position if a range is specified.
         if let Some(start_time) = start {
             let start_timestamp =
-                crate::utilities::duration_to_stream_timestamp(start_time, input_time_base);
+                crate::conversion::duration_to_stream_timestamp(start_time, input_time_base);
             self.unbundler
                 .input_context
                 .seek(start_timestamp, ..start_timestamp)?;
@@ -492,7 +499,7 @@ impl<'a> AudioExtractor<'a> {
 
         // Compute end timestamp in stream time base for range filtering.
         let end_stream_timestamp = end.map(|end_time| {
-            crate::utilities::duration_to_stream_timestamp(end_time, input_time_base)
+            crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
         });
 
         // ── In-memory muxing via avio_open_dyn_buf ─────────────────
@@ -735,7 +742,7 @@ impl<'a> AudioExtractor<'a> {
         format: AudioFormat,
         start: Option<Duration>,
         end: Option<Duration>,
-        config: Option<&ExtractionConfig>,
+        config: Option<&ExtractOptions>,
     ) -> Result<(), UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
         log::debug!("Saving audio to file {:?} (format={}, stream={})", path, format, audio_stream_index);
@@ -785,14 +792,14 @@ impl<'a> AudioExtractor<'a> {
         // Seek if a start time was specified.
         if let Some(start_time) = start {
             let start_timestamp =
-                crate::utilities::duration_to_stream_timestamp(start_time, input_time_base);
+                crate::conversion::duration_to_stream_timestamp(start_time, input_time_base);
             self.unbundler
                 .input_context
                 .seek(start_timestamp, ..start_timestamp)?;
         }
 
         let end_stream_timestamp = end.map(|end_time| {
-            crate::utilities::duration_to_stream_timestamp(end_time, input_time_base)
+            crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
         });
 
         // Create output context via the safe API.
@@ -936,7 +943,7 @@ impl<'a> AudioExtractor<'a> {
         samples_written: &mut i64,
         encoder_time_base: Rational,
         end_stream_timestamp: Option<i64>,
-        config: Option<&ExtractionConfig>,
+        config: Option<&ExtractOptions>,
         writer: &mut W,
     ) -> Result<(), UnbundleError> {
         for (stream, packet) in self.unbundler.input_context.packets() {
@@ -1001,11 +1008,11 @@ impl<'a> AudioExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{AudioFormat, ExtractionConfig, MediaUnbundler};
+    /// use unbundle::{AudioFormat, ExtractOptions, MediaFile, UnbundleError};
     ///
-    /// # async fn example() -> Result<(), unbundle::UnbundleError> {
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let config = ExtractionConfig::new();
+    /// # async fn example() -> Result<(), UnbundleError> {
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let config = ExtractOptions::new();
     /// let audio_bytes = unbundler
     ///     .audio()
     ///     .extract_async(AudioFormat::Wav, config)?
@@ -1014,11 +1021,11 @@ impl<'a> AudioExtractor<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(feature = "async-tokio")]
+    #[cfg(feature = "async")]
     pub fn extract_async(
         &mut self,
         format: AudioFormat,
-        config: ExtractionConfig,
+        config: ExtractOptions,
     ) -> Result<AudioFuture, UnbundleError> {
         let _stream_index = self.resolve_stream_index()?;
         let track_index = self.stream_index.and_then(|si| {
@@ -1039,7 +1046,7 @@ impl<'a> AudioExtractor<'a> {
 
     /// Extract an audio time range asynchronously.
     ///
-    /// Like [`extract_async`](AudioExtractor::extract_async) but extracts only
+    /// Like [`extract_async`](AudioHandle::extract_async) but extracts only
     /// the segment between `start` and `end`.
     ///
     /// # Errors
@@ -1052,29 +1059,29 @@ impl<'a> AudioExtractor<'a> {
     /// ```no_run
     /// use std::time::Duration;
     ///
-    /// use unbundle::{AudioFormat, ExtractionConfig, MediaUnbundler};
+    /// use unbundle::{AudioFormat, ExtractOptions, MediaFile, UnbundleError};
     ///
-    /// # async fn example() -> Result<(), unbundle::UnbundleError> {
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// # async fn example() -> Result<(), UnbundleError> {
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let audio = unbundler
     ///     .audio()
     ///     .extract_range_async(
     ///         AudioFormat::Mp3,
     ///         Duration::from_secs(10),
     ///         Duration::from_secs(20),
-    ///         ExtractionConfig::new(),
+    ///         ExtractOptions::new(),
     ///     )?
     ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(feature = "async-tokio")]
+    #[cfg(feature = "async")]
     pub fn extract_range_async(
         &mut self,
         format: AudioFormat,
         start: Duration,
         end: Duration,
-        config: ExtractionConfig,
+        config: ExtractOptions,
     ) -> Result<AudioFuture, UnbundleError> {
         let _stream_index = self.resolve_stream_index()?;
         if start >= end {

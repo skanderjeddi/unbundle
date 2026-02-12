@@ -2,9 +2,11 @@
 //!
 //! Requires the `waveform` feature and test fixtures.
 
+#![cfg(feature = "waveform")]
+
 use std::path::Path;
 
-use unbundle::{MediaUnbundler, WaveformConfig};
+use unbundle::{MediaFile, WaveformOptions};
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -17,8 +19,8 @@ fn generate_waveform_default() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
-    let config = WaveformConfig::default();
+    let mut unbundler = MediaFile::open(path).expect("open");
+    let config = WaveformOptions::default();
     let waveform = unbundler
         .audio()
         .generate_waveform(&config)
@@ -37,8 +39,8 @@ fn waveform_custom_bins() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
-    let config = WaveformConfig { bins: 50, ..Default::default() };
+    let mut unbundler = MediaFile::open(path).expect("open");
+    let config = WaveformOptions { bins: 50, ..Default::default() };
     let waveform = unbundler
         .audio()
         .generate_waveform(&config)
@@ -54,10 +56,10 @@ fn waveform_bins_in_range() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
     let waveform = unbundler
         .audio()
-        .generate_waveform(&WaveformConfig::default())
+        .generate_waveform(&WaveformOptions::default())
         .expect("waveform");
 
     for bin in &waveform.bins {

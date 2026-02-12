@@ -5,24 +5,24 @@
 
 use std::path::Path;
 
-use unbundle::{FrameRange, FrameType, MediaUnbundler};
+use unbundle::{FrameRange, FrameType, MediaFile};
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
 }
 
 #[test]
-fn frame_with_info_returns_image_and_metadata() {
+fn frame_and_metadata_returns_image_and_metadata() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
         eprintln!("Skipping: fixture '{path}' not found.");
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let (image, info) = unbundler
         .video()
-        .frame_with_info(0)
+        .frame_and_metadata(0)
         .expect("Failed to extract frame with info");
 
     assert!(image.width() > 0);
@@ -30,17 +30,17 @@ fn frame_with_info_returns_image_and_metadata() {
 }
 
 #[test]
-fn frame_with_info_first_frame_is_keyframe() {
+fn frame_and_metadata_first_frame_is_keyframe() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
         eprintln!("Skipping: fixture '{path}' not found.");
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let (_image, info) = unbundler
         .video()
-        .frame_with_info(0)
+        .frame_and_metadata(0)
         .expect("Failed to extract frame 0");
 
     assert!(info.is_keyframe, "First frame should be a keyframe");
@@ -48,17 +48,17 @@ fn frame_with_info_first_frame_is_keyframe() {
 }
 
 #[test]
-fn frame_with_info_has_timestamp() {
+fn frame_and_metadata_has_timestamp() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
         eprintln!("Skipping: fixture '{path}' not found.");
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let (_image, info) = unbundler
         .video()
-        .frame_with_info(30)
+        .frame_and_metadata(30)
         .expect("Failed to extract frame 30");
 
     // Frame 30 at 30 fps should be approximately 1 second.
@@ -70,17 +70,17 @@ fn frame_with_info_has_timestamp() {
 }
 
 #[test]
-fn frame_with_info_has_pts() {
+fn frame_and_metadata_has_pts() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
         eprintln!("Skipping: fixture '{path}' not found.");
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let (_image, info) = unbundler
         .video()
-        .frame_with_info(0)
+        .frame_and_metadata(0)
         .expect("Failed to extract frame 0");
 
     // The first frame should have a PTS.
@@ -91,17 +91,17 @@ fn frame_with_info_has_pts() {
 }
 
 #[test]
-fn frames_with_info_returns_correct_count() {
+fn frames_and_metadata_returns_correct_count() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
         eprintln!("Skipping: fixture '{path}' not found.");
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let results = unbundler
         .video()
-        .frames_with_info(FrameRange::Range(0, 4))
+        .frames_and_metadata(FrameRange::Range(0, 4))
         .expect("Failed to extract frames with info");
 
     assert_eq!(results.len(), 5, "Expected 5 frames (0..=4)");
@@ -122,15 +122,15 @@ fn frame_type_debug_display() {
 }
 
 #[test]
-fn frame_with_info_out_of_range() {
+fn frame_and_metadata_out_of_range() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
         eprintln!("Skipping: fixture '{path}' not found.");
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let frame_count = unbundler.metadata().video.as_ref().unwrap().frame_count;
-    let result = unbundler.video().frame_with_info(frame_count + 100);
+    let result = unbundler.video().frame_and_metadata(frame_count + 100);
     assert!(result.is_err(), "Should error on out-of-range frame");
 }

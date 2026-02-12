@@ -5,11 +5,11 @@
 
 use std::{path::Path, time::Duration};
 
-use unbundle::{AudioFormat, MediaUnbundler, UnbundleError};
+use unbundle::{AudioFormat, MediaFile, UnbundleError};
 
 #[test]
 fn open_nonexistent_file() {
-    let result = MediaUnbundler::open("this_file_does_not_exist.mp4");
+    let result = MediaFile::open("this_file_does_not_exist.mp4");
     assert!(result.is_err());
 
     let error_message = result.unwrap_err().to_string();
@@ -27,7 +27,7 @@ fn open_invalid_file() {
     std::fs::write(&invalid_file_path, b"this is not a media file")
         .expect("Failed to write invalid file");
 
-    let result = MediaUnbundler::open(&invalid_file_path);
+    let result = MediaFile::open(&invalid_file_path);
     assert!(result.is_err(), "Expected error for invalid media file");
 }
 
@@ -38,7 +38,7 @@ fn frame_out_of_range() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
     let result = unbundler.video().frame(999_999);
     assert!(result.is_err());
 
@@ -56,7 +56,7 @@ fn invalid_timestamp() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
     // 1 hour is way beyond a 5-second video.
     let result = unbundler.video().frame_at(Duration::from_secs(3600));
     assert!(result.is_err());
@@ -75,7 +75,7 @@ fn no_video_stream_error() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open audio-only file");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open audio-only file");
     let result = unbundler.video().frame(0);
     assert!(result.is_err());
 
@@ -93,7 +93,7 @@ fn no_audio_stream_error() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open video-only file");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open video-only file");
     let result = unbundler.audio().extract(AudioFormat::Wav);
     assert!(result.is_err());
 
@@ -111,7 +111,7 @@ fn invalid_audio_range_timestamps() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
     // End time exceeds media duration.
     let result = unbundler.audio().extract_range(
         Duration::from_secs(0),
@@ -128,7 +128,7 @@ fn audio_range_start_after_end() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
     let result = unbundler.audio().extract_range(
         Duration::from_secs(3),
         Duration::from_secs(1),

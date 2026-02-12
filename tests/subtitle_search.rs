@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use unbundle::MediaUnbundler;
+use unbundle::MediaFile;
 
 fn subtitled_path() -> &'static str {
     "tests/fixtures/sample_with_subtitles.mkv"
@@ -19,7 +19,7 @@ fn extract_subtitle_range() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
     let events = unbundler
         .subtitle()
         .extract_range(Duration::from_millis(0), Duration::from_millis(2500))
@@ -49,7 +49,7 @@ fn search_subtitles_case_insensitive() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
     let results = unbundler.subtitle().search("hello").expect("search");
 
     assert!(
@@ -70,7 +70,7 @@ fn search_subtitles_no_match() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
     let results = unbundler
         .subtitle()
         .search("nonexistent_xyzzy")
@@ -86,7 +86,7 @@ fn search_exact_case_sensitive() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
 
     // Exact casing: "Hello" (capital H) should match.
     let results = unbundler

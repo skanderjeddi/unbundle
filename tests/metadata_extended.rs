@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use unbundle::MediaUnbundler;
+use unbundle::MediaFile;
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -15,7 +15,7 @@ fn container_tags_present() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("open");
+    let unbundler = MediaFile::open(path).expect("open");
     let meta = unbundler.metadata();
 
     // Tags may or may not be present depending on how the fixture was created.
@@ -36,7 +36,7 @@ fn video_colorspace_fields() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("open");
+    let unbundler = MediaFile::open(path).expect("open");
     let meta = unbundler.metadata();
     let video = meta.video.as_ref().expect("video metadata");
 
@@ -57,7 +57,7 @@ fn video_tracks_populated() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("open");
+    let unbundler = MediaFile::open(path).expect("open");
     let meta = unbundler.metadata();
 
     if let Some(tracks) = &meta.video_tracks {
@@ -79,7 +79,7 @@ fn video_track_selection() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
 
     // Track 0 should always be valid for a video file.
     let extractor = unbundler.video_track(0);

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use unbundle::{
-    CancellationToken, ExtractionConfig, FrameRange, MediaUnbundler,
+    CancellationToken, ExtractOptions, FrameRange, MediaFile,
     OperationType, ProgressCallback, ProgressInfo, UnbundleError,
 };
 
@@ -55,13 +55,13 @@ fn cancelled_extraction_returns_error() {
     let token = CancellationToken::new();
     token.cancel(); // Cancel immediately.
 
-    let config = ExtractionConfig::new()
+    let config = ExtractOptions::new()
         .with_cancellation(token);
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
     let result = unbundler
         .video()
-        .frames_with_config(FrameRange::Range(0, 99), &config);
+        .frames_with_options(FrameRange::Range(0, 99), &config);
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -92,14 +92,14 @@ fn progress_reports_frame_extraction_operation() {
     let recorder = Arc::new(RecordingProgress {
         infos: std::sync::Mutex::new(Vec::new()),
     });
-    let config = ExtractionConfig::new()
+    let config = ExtractOptions::new()
         .with_progress(recorder.clone())
         .with_batch_size(1);
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
     unbundler
         .video()
-        .frames_with_config(FrameRange::Range(0, 4), &config)
+        .frames_with_options(FrameRange::Range(0, 4), &config)
         .expect("Failed to extract");
 
     let infos = recorder.infos.lock().unwrap();
@@ -121,14 +121,14 @@ fn progress_current_increases() {
     let recorder = Arc::new(RecordingProgress {
         infos: std::sync::Mutex::new(Vec::new()),
     });
-    let config = ExtractionConfig::new()
+    let config = ExtractOptions::new()
         .with_progress(recorder.clone())
         .with_batch_size(1);
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
     unbundler
         .video()
-        .frames_with_config(FrameRange::Range(0, 9), &config)
+        .frames_with_options(FrameRange::Range(0, 9), &config)
         .expect("Failed to extract");
 
     let infos = recorder.infos.lock().unwrap();
@@ -151,14 +151,14 @@ fn progress_has_elapsed() {
     let recorder = Arc::new(RecordingProgress {
         infos: std::sync::Mutex::new(Vec::new()),
     });
-    let config = ExtractionConfig::new()
+    let config = ExtractOptions::new()
         .with_progress(recorder.clone())
         .with_batch_size(1);
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
     unbundler
         .video()
-        .frames_with_config(FrameRange::Range(0, 2), &config)
+        .frames_with_options(FrameRange::Range(0, 2), &config)
         .expect("Failed to extract");
 
     let infos = recorder.infos.lock().unwrap();

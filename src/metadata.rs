@@ -1,7 +1,7 @@
 //! Media metadata types.
 //!
 //! This module defines the metadata structures returned by
-//! [`MediaUnbundler::metadata`](crate::MediaUnbundler::metadata). Metadata is
+//! [`MediaFile::metadata`](crate::MediaFile::metadata). Metadata is
 //! extracted once when the file is opened and cached for the lifetime of the
 //! unbundler.
 
@@ -16,9 +16,9 @@ use std::time::Duration;
 /// # Example
 ///
 /// ```no_run
-/// use unbundle::MediaUnbundler;
+/// use unbundle::{MediaFile, UnbundleError};
 ///
-/// let unbundler = MediaUnbundler::open("input.mp4").unwrap();
+/// let unbundler = MediaFile::open("input.mp4").unwrap();
 /// let metadata = unbundler.metadata();
 /// println!("Duration: {:?}", metadata.duration);
 /// println!("Format: {}", metadata.format);
@@ -129,16 +129,16 @@ pub struct AudioMetadata {
 /// # Example
 ///
 /// ```no_run
-/// use unbundle::MediaUnbundler;
+/// use unbundle::{MediaFile, UnbundleError};
 ///
-/// let unbundler = MediaUnbundler::open("input.mkv")?;
+/// let unbundler = MediaFile::open("input.mkv")?;
 /// if let Some(chapters) = unbundler.metadata().chapters.as_ref() {
 ///     for chapter in chapters {
 ///         println!("[{:?}–{:?}] {}", chapter.start, chapter.end,
 ///             chapter.title.as_deref().unwrap_or("(untitled)"));
 ///     }
 /// }
-/// # Ok::<(), unbundle::UnbundleError>(())
+/// # Ok::<(), UnbundleError>(())
 /// ```
 #[derive(Debug, Clone)]
 #[must_use]

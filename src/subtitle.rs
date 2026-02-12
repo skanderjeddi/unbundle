@@ -1,20 +1,20 @@
 //! Subtitle extraction.
 //!
-//! This module provides [`SubtitleExtractor`] for extracting text-based
+//! This module provides [`SubtitleHandle`] for extracting text-based
 //! subtitle tracks from media files, and [`SubtitleEvent`] for representing
 //! individual subtitle events with timing information.
 //!
 //! # Example
 //!
 //! ```no_run
-//! use unbundle::MediaUnbundler;
+//! use unbundle::{MediaFile, UnbundleError};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mkv")?;
+//! let mut unbundler = MediaFile::open("input.mkv")?;
 //! let entries = unbundler.subtitle().extract()?;
 //! for entry in &entries {
 //!     println!("[{:?} → {:?}] {}", entry.start_time, entry.end_time, entry.text);
 //! }
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -24,12 +24,14 @@ use std::time::Duration;
 
 use ffmpeg_next::{
     codec::context::Context as CodecContext,
+    subtitle::Bitmap as SubtitleBitmap,
     Subtitle,
     subtitle::Rect,
 };
+use image::{DynamicImage, RgbaImage};
 
 use crate::error::UnbundleError;
-use crate::unbundler::MediaUnbundler;
+use crate::unbundle::MediaFile;
 
 /// A single subtitle event with timing and text content.
 #[derive(Debug, Clone)]
@@ -68,16 +70,16 @@ impl Display for SubtitleFormat {
 
 /// Subtitle extraction operations.
 ///
-/// Obtained via [`MediaUnbundler::subtitle`] or
-/// [`MediaUnbundler::subtitle_track`]. Extracts text-based subtitle events
+/// Obtained via [`MediaFile::subtitle`] or
+/// [`MediaFile::subtitle_track`]. Extracts text-based subtitle events
 /// from the media file.
-pub struct SubtitleExtractor<'a> {
-    pub(crate) unbundler: &'a mut MediaUnbundler,
+pub struct SubtitleHandle<'a> {
+    pub(crate) unbundler: &'a mut MediaFile,
     /// Which subtitle stream to extract. `None` means "use default".
     pub(crate) stream_index: Option<usize>,
 }
 
-impl<'a> SubtitleExtractor<'a> {
+impl<'a> SubtitleHandle<'a> {
     /// Resolve the subtitle stream index.
     fn resolve_stream_index(&self) -> Result<usize, UnbundleError> {
         self.stream_index
@@ -97,12 +99,12 @@ impl<'a> SubtitleExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mkv")?;
+    /// let mut unbundler = MediaFile::open("input.mkv")?;
     /// let entries = unbundler.subtitle().extract()?;
     /// println!("Found {} subtitle entries", entries.len());
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn extract(&mut self) -> Result<Vec<SubtitleEvent>, UnbundleError> {
         let subtitle_stream_index = self.resolve_stream_index()?;
@@ -203,17 +205,17 @@ impl<'a> SubtitleExtractor<'a> {
     ///
     /// # Errors
     ///
-    /// Returns errors from [`extract`](SubtitleExtractor::extract) or
+    /// Returns errors from [`extract`](SubtitleHandle::extract) or
     /// I/O errors when writing the file.
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{MediaUnbundler, SubtitleFormat};
+    /// use unbundle::{MediaFile, SubtitleFormat, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mkv")?;
+    /// let mut unbundler = MediaFile::open("input.mkv")?;
     /// unbundler.subtitle().save("subtitles.srt", SubtitleFormat::Srt)?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn save<P: AsRef<Path>>(
         &mut self,
@@ -233,7 +235,7 @@ impl<'a> SubtitleExtractor<'a> {
     ///
     /// # Errors
     ///
-    /// Returns errors from [`extract`](SubtitleExtractor::extract).
+    /// Returns errors from [`extract`](SubtitleHandle::extract).
     pub fn extract_text(
         &mut self,
         format: SubtitleFormat,
@@ -251,20 +253,20 @@ impl<'a> SubtitleExtractor<'a> {
     /// # Errors
     ///
     /// - [`UnbundleError::InvalidRange`] if `start >= end`.
-    /// - Plus any errors from [`extract`](SubtitleExtractor::extract).
+    /// - Plus any errors from [`extract`](SubtitleHandle::extract).
     ///
     /// # Example
     ///
     /// ```no_run
     /// use std::time::Duration;
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mkv")?;
+    /// let mut unbundler = MediaFile::open("input.mkv")?;
     /// let subs = unbundler
     ///     .subtitle()
     ///     .extract_range(Duration::from_secs(10), Duration::from_secs(30))?;
     /// println!("Found {} subtitles in range", subs.len());
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn extract_range(
         &mut self,
@@ -287,28 +289,28 @@ impl<'a> SubtitleExtractor<'a> {
 
     /// Extract subtitles in a time range and save to a file.
     ///
-    /// Combines [`extract_range`](SubtitleExtractor::extract_range) with
+    /// Combines [`extract_range`](SubtitleHandle::extract_range) with
     /// file output in the specified format.
     ///
     /// # Errors
     ///
-    /// Returns errors from [`extract_range`](SubtitleExtractor::extract_range)
+    /// Returns errors from [`extract_range`](SubtitleHandle::extract_range)
     /// or I/O errors when writing the file.
     ///
     /// # Example
     ///
     /// ```no_run
     /// use std::time::Duration;
-    /// use unbundle::{MediaUnbundler, SubtitleFormat};
+    /// use unbundle::{MediaFile, SubtitleFormat, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mkv")?;
+    /// let mut unbundler = MediaFile::open("input.mkv")?;
     /// unbundler.subtitle().save_range(
     ///     "partial.srt",
     ///     SubtitleFormat::Srt,
     ///     Duration::from_secs(0),
     ///     Duration::from_secs(60),
     /// )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn save_range<P: AsRef<Path>>(
         &mut self,
@@ -325,12 +327,12 @@ impl<'a> SubtitleExtractor<'a> {
 
     /// Extract subtitles in a time range and format as a string.
     ///
-    /// Combines [`extract_range`](SubtitleExtractor::extract_range) with
+    /// Combines [`extract_range`](SubtitleHandle::extract_range) with
     /// text formatting.
     ///
     /// # Errors
     ///
-    /// Returns errors from [`extract_range`](SubtitleExtractor::extract_range).
+    /// Returns errors from [`extract_range`](SubtitleHandle::extract_range).
     pub fn extract_text_range(
         &mut self,
         format: SubtitleFormat,
@@ -348,19 +350,19 @@ impl<'a> SubtitleExtractor<'a> {
     ///
     /// # Errors
     ///
-    /// Returns errors from [`extract`](SubtitleExtractor::extract).
+    /// Returns errors from [`extract`](SubtitleHandle::extract).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mkv")?;
+    /// let mut unbundler = MediaFile::open("input.mkv")?;
     /// let results = unbundler.subtitle().search("hello")?;
     /// for sub in &results {
     ///     println!("[{:?}] {}", sub.start_time, sub.text);
     /// }
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn search(&mut self, query: &str) -> Result<Vec<SubtitleEvent>, UnbundleError> {
         let entries = self.extract()?;
@@ -378,16 +380,16 @@ impl<'a> SubtitleExtractor<'a> {
     ///
     /// # Errors
     ///
-    /// Returns errors from [`extract`](SubtitleExtractor::extract).
+    /// Returns errors from [`extract`](SubtitleHandle::extract).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mkv")?;
+    /// let mut unbundler = MediaFile::open("input.mkv")?;
     /// let results = unbundler.subtitle().search_exact("Hello")?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn search_exact(&mut self, query: &str) -> Result<Vec<SubtitleEvent>, UnbundleError> {
         let entries = self.extract()?;
@@ -414,14 +416,14 @@ impl<'a> SubtitleExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mkv")?;
+    /// let mut unbundler = MediaFile::open("input.mkv")?;
     /// let bitmaps = unbundler.subtitle().extract_bitmaps()?;
     /// for (i, bmp) in bitmaps.iter().enumerate() {
     ///     bmp.image.save(format!("sub_{i}.png")).unwrap();
     /// }
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn extract_bitmaps(&mut self) -> Result<Vec<BitmapSubtitleEvent>, UnbundleError> {
         let subtitle_stream_index = self.resolve_stream_index()?;
@@ -508,13 +510,13 @@ pub struct BitmapSubtitleEvent {
     /// Vertical position on the video frame.
     pub y: u32,
     /// The decoded subtitle image (RGBA).
-    pub image: image::DynamicImage,
+    pub image: DynamicImage,
     /// Zero-based index of this event.
     pub index: usize,
 }
 
 /// Decode a PAL8 bitmap subtitle rect into an RGBA [`DynamicImage`].
-fn decode_bitmap_rect(bmp: &ffmpeg_next::subtitle::Bitmap<'_>) -> Option<image::DynamicImage> {
+fn decode_bitmap_rect(bmp: &SubtitleBitmap<'_>) -> Option<DynamicImage> {
     let w = bmp.width();
     let h = bmp.height();
     if w == 0 || h == 0 {
@@ -556,8 +558,8 @@ fn decode_bitmap_rect(bmp: &ffmpeg_next::subtitle::Bitmap<'_>) -> Option<image::
             }
         }
 
-        let img = image::RgbaImage::from_raw(w, h, rgba_buf)?;
-        Some(image::DynamicImage::ImageRgba8(img))
+        let img = RgbaImage::from_raw(w, h, rgba_buf)?;
+        Some(DynamicImage::ImageRgba8(img))
     }
 }
 

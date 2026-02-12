@@ -5,7 +5,7 @@
 
 use std::error::Error;
 
-use unbundle::MediaUnbundler;
+use unbundle::MediaFile;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|| "input.mp4".to_string());
 
     println!("Opening {input_path}...");
-    let unbundler = MediaUnbundler::open(&input_path)?;
+    let unbundler = MediaFile::open(&input_path)?;
     let metadata = unbundler.metadata();
 
     println!();

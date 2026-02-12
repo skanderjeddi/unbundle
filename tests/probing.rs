@@ -38,7 +38,7 @@ fn probe_matches_unbundler_metadata() {
     }
 
     let probed = MediaProbe::probe(path).expect("Failed to probe");
-    let unbundler = unbundle::MediaUnbundler::open(path).expect("Failed to open");
+    let unbundler = unbundle::MediaFile::open(path).expect("Failed to open");
     let direct = unbundler.metadata();
 
     assert_eq!(probed.format, direct.format);

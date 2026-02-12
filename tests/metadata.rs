@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use unbundle::MediaUnbundler;
+use unbundle::MediaFile;
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -18,7 +18,7 @@ fn metadata_has_video_stream() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let metadata = unbundler.metadata();
 
     assert!(metadata.video.is_some(), "Expected video metadata");
@@ -31,7 +31,7 @@ fn metadata_has_audio_stream() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let metadata = unbundler.metadata();
 
     assert!(metadata.audio.is_some(), "Expected audio metadata");
@@ -44,7 +44,7 @@ fn video_metadata_dimensions() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let video_metadata = unbundler
         .metadata()
         .video
@@ -63,7 +63,7 @@ fn video_metadata_frame_rate() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let video_metadata = unbundler
         .metadata()
         .video
@@ -85,7 +85,7 @@ fn video_metadata_frame_count() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let video_metadata = unbundler
         .metadata()
         .video
@@ -107,7 +107,7 @@ fn metadata_duration() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let duration = unbundler.metadata().duration;
 
     // The test fixture is 5 seconds.
@@ -125,7 +125,7 @@ fn metadata_format_name() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let format = &unbundler.metadata().format;
 
     // MP4 container format name in FFmpeg.
@@ -142,7 +142,7 @@ fn audio_metadata_sample_rate() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let audio_metadata = unbundler
         .metadata()
         .audio
@@ -163,7 +163,7 @@ fn audio_metadata_channels() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open test video");
+    let unbundler = MediaFile::open(path).expect("Failed to open test video");
     let audio_metadata = unbundler
         .metadata()
         .audio
@@ -181,7 +181,7 @@ fn audio_only_file_has_no_video_metadata() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open audio-only file");
+    let unbundler = MediaFile::open(path).expect("Failed to open audio-only file");
     let metadata = unbundler.metadata();
 
     assert!(metadata.video.is_none(), "Expected no video metadata");
@@ -195,7 +195,7 @@ fn video_only_file_has_no_audio_metadata() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open video-only file");
+    let unbundler = MediaFile::open(path).expect("Failed to open video-only file");
     let metadata = unbundler.metadata();
 
     assert!(metadata.video.is_some(), "Expected video metadata");
@@ -204,7 +204,7 @@ fn video_only_file_has_no_audio_metadata() {
 
 #[test]
 fn open_nonexistent_file_returns_error() {
-    let result = MediaUnbundler::open("nonexistent_file.mp4");
+    let result = MediaFile::open("nonexistent_file.mp4");
     assert!(result.is_err(), "Expected error for nonexistent file");
 }
 
@@ -215,7 +215,7 @@ fn mkv_format_works() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open MKV file");
+    let unbundler = MediaFile::open(path).expect("Failed to open MKV file");
     let metadata = unbundler.metadata();
 
     assert!(metadata.video.is_some(), "Expected video stream in MKV");

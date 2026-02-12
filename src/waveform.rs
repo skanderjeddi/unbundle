@@ -1,6 +1,6 @@
 //! Audio waveform generation.
 //!
-//! This module provides [`WaveformConfig`] and [`WaveformData`] for
+//! This module provides [`WaveformOptions`] and [`WaveformData`] for
 //! generating waveform data suitable for visualisation. Audio samples
 //! are decoded, downmixed to mono, and bucketed into a configurable
 //! number of bins, with min/max/RMS values per bin.
@@ -8,13 +8,13 @@
 //! # Example
 //!
 //! ```no_run
-//! use unbundle::{MediaUnbundler, WaveformConfig};
+//! use unbundle::{MediaFile, UnbundleError, WaveformOptions};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4")?;
-//! let config = WaveformConfig::new().bins(800);
+//! let mut unbundler = MediaFile::open("input.mp4")?;
+//! let config = WaveformOptions::new().bins(800);
 //! let waveform = unbundler.audio().generate_waveform(&config)?;
 //! println!("Bins: {}", waveform.bins.len());
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::time::Duration;
@@ -26,11 +26,11 @@ use ffmpeg_next::frame::Audio as AudioFrame;
 use ffmpeg_next::software::resampling::Context as ResamplingContext;
 
 use crate::error::UnbundleError;
-use crate::unbundler::MediaUnbundler;
+use crate::unbundle::MediaFile;
 
 /// Configuration for waveform generation.
 #[derive(Debug, Clone)]
-pub struct WaveformConfig {
+pub struct WaveformOptions {
     /// Number of output bins (columns). Default: 800.
     pub bins: usize,
     /// Optional start time to limit the range.
@@ -39,7 +39,7 @@ pub struct WaveformConfig {
     pub end: Option<Duration>,
 }
 
-impl Default for WaveformConfig {
+impl Default for WaveformOptions {
     fn default() -> Self {
         Self {
             bins: 800,
@@ -49,8 +49,8 @@ impl Default for WaveformConfig {
     }
 }
 
-impl WaveformConfig {
-    /// Create a new [`WaveformConfig`] with default settings.
+impl WaveformOptions {
+    /// Create a new [`WaveformOptions`] with default settings.
     pub fn new() -> Self {
         Self::default()
     }
@@ -85,7 +85,7 @@ pub struct WaveformBin {
     pub rms: f32,
 }
 
-/// Waveform data produced by [`AudioExtractor::generate_waveform`](crate::AudioExtractor).
+/// Waveform data produced by [`AudioHandle::generate_waveform`](crate::AudioHandle).
 #[derive(Debug, Clone)]
 pub struct WaveformData {
     /// One entry per bin.
@@ -100,9 +100,9 @@ pub struct WaveformData {
 
 /// Decode audio to mono f32, bucket into bins, compute min/max/rms per bin.
 pub(crate) fn generate_waveform_impl(
-    unbundler: &mut MediaUnbundler,
+    unbundler: &mut MediaFile,
     audio_stream_index: usize,
-    config: &WaveformConfig,
+    config: &WaveformOptions,
 ) -> Result<WaveformData, UnbundleError> {
     log::debug!("Generating waveform (stream={}, bins={})", audio_stream_index, config.bins);
     let stream = unbundler

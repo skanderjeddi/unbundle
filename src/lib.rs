@@ -13,9 +13,9 @@
 //! ### Extract a Video Frame
 //!
 //! ```no_run
-//! use unbundle::MediaUnbundler;
+//! use unbundle::MediaFile;
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4").unwrap();
+//! let mut unbundler = MediaFile::open("input.mp4").unwrap();
 //! let frame = unbundler.video().frame(0).unwrap();
 //! frame.save("first_frame.png").unwrap();
 //! ```
@@ -23,9 +23,9 @@
 //! ### Extract Audio
 //!
 //! ```no_run
-//! use unbundle::{AudioFormat, MediaUnbundler};
+//! use unbundle::{AudioFormat, MediaFile};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4").unwrap();
+//! let mut unbundler = MediaFile::open("input.mp4").unwrap();
 //! unbundler.audio().save("output.wav", AudioFormat::Wav).unwrap();
 //! ```
 //!
@@ -34,9 +34,9 @@
 //! ```no_run
 //! use std::time::Duration;
 //!
-//! use unbundle::{FrameRange, MediaUnbundler};
+//! use unbundle::{FrameRange, MediaFile};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4").unwrap();
+//! let mut unbundler = MediaFile::open("input.mp4").unwrap();
 //!
 //! // Every 30th frame
 //! let frames = unbundler.video().frames(FrameRange::Interval(30)).unwrap();
@@ -50,9 +50,9 @@
 //! ### Extract Subtitles
 //!
 //! ```no_run
-//! use unbundle::{MediaUnbundler, SubtitleFormat};
+//! use unbundle::{MediaFile, SubtitleFormat};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mkv").unwrap();
+//! let mut unbundler = MediaFile::open("input.mkv").unwrap();
 //! unbundler.subtitle().save("output.srt", SubtitleFormat::Srt).unwrap();
 //! ```
 //!
@@ -86,10 +86,10 @@
 //!
 //! | Feature | Description |
 //! |---------|-------------|
-//! | `async-tokio` | `FrameStream` and `AudioFuture` for async extraction via Tokio |
-//! | `parallel` | `frames_parallel()` distributes decoding across rayon threads |
-//! | `hw-accel` | Hardware-accelerated decoding (CUDA, VAAPI, DXVA2, D3D11VA, VideoToolbox, QSV) |
-//! | `scene-detection` | Scene change detection via FFmpeg's `scdet` filter |
+//! | `async` | `FrameStream` and `AudioFuture` for async extraction via Tokio |
+//! | `rayon` | `frames_parallel()` distributes decoding across rayon threads |
+//! | `hardware` | Hardware-accelerated decoding (CUDA, VAAPI, DXVA2, D3D11VA, VideoToolbox, QSV) |
+//! | `scene` | Scene change detection via FFmpeg's `scdet` filter |
 //! | `full` | Enables all of the above |
 //!
 //! ## Requirements
@@ -99,72 +99,72 @@
 //! platform-specific instructions.
 
 pub mod audio;
-pub mod audio_iter;
-#[cfg(feature = "async-tokio")]
+pub mod audio_iterator;
+#[cfg(feature = "async")]
 pub mod stream;
-pub mod config;
+pub mod configuration;
 #[cfg(feature = "gif")]
 pub mod gif;
 pub mod remux;
 pub mod error;
-pub mod iterator;
-#[cfg(feature = "hw-accel")]
-pub mod hw_accel;
-pub mod keyframes;
+pub mod video_iterator;
+#[cfg(feature = "hardware")]
+pub mod hardware_acceleration;
+pub mod keyframe;
 #[cfg(feature = "loudness")]
 pub mod loudness;
 pub mod metadata;
-pub mod packet_iter;
-#[cfg(feature = "parallel")]
-mod parallel;
+pub mod packet_iterator;
+#[cfg(feature = "rayon")]
+mod rayon;
 pub mod probe;
 pub mod progress;
-#[cfg(feature = "scene-detection")]
+#[cfg(feature = "scene")]
 pub mod scene;
 pub mod subtitle;
 pub mod thumbnail;
 #[cfg(feature = "transcode")]
 pub mod transcode;
-pub mod unbundler;
-mod utilities;
+pub mod unbundle;
+mod conversion;
 pub mod validation;
-pub mod vfr;
+pub mod variable_framerate;
 pub mod video;
-#[cfg(feature = "video-writer")]
-pub mod video_writer;
+#[cfg(feature = "encode")]
+pub mod encode;
 #[cfg(feature = "waveform")]
 pub mod waveform;
 
-#[cfg(feature = "async-tokio")]
+#[cfg(feature = "async")]
 pub use stream::{AudioFuture, FrameStream};
-pub use audio::{AudioExtractor, AudioFormat};
-pub use audio_iter::{AudioChunk, AudioIterator};
-pub use config::{ExtractionConfig, FrameOutputConfig, PixelFormat};
+pub use audio::{AudioFormat, AudioHandle};
+pub use audio_iterator::{AudioChunk, AudioIterator};
+pub use configuration::{ExtractOptions, FrameOutputOptions, PixelFormat};
 #[cfg(feature = "gif")]
-pub use gif::GifConfig;
+pub use gif::GifOptions;
 pub use remux::Remuxer;
 pub use error::UnbundleError;
-pub use iterator::FrameIterator;
-#[cfg(feature = "hw-accel")]
-pub use hw_accel::{HwAccelMode, HwDeviceType};
-pub use keyframes::{GopInfo, KeyframeInfo};
+pub use video_iterator::FrameIterator;
+#[cfg(feature = "hardware")]
+pub use hardware_acceleration::{HardwareAccelerationMode, HardwareDeviceType};
+pub use keyframe::{GroupOfPicturesInfo, KeyFrameMetadata};
 #[cfg(feature = "loudness")]
 pub use loudness::LoudnessInfo;
 pub use metadata::{AudioMetadata, ChapterMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata};
-pub use packet_iter::{PacketInfo, PacketIterator};
+pub use packet_iterator::{PacketInfo, PacketIterator};
 pub use probe::MediaProbe;
 pub use progress::{CancellationToken, OperationType, ProgressCallback, ProgressInfo};
-#[cfg(feature = "scene-detection")]
-pub use scene::{SceneChange, SceneDetectionConfig};
-pub use subtitle::{BitmapSubtitleEvent, SubtitleEvent, SubtitleExtractor, SubtitleFormat};
-pub use thumbnail::{ThumbnailConfig, ThumbnailGenerator};
+#[cfg(feature = "scene")]
+pub use scene::{SceneChange, SceneDetectionOptions};
+pub use subtitle::{BitmapSubtitleEvent, SubtitleEvent, SubtitleFormat, SubtitleHandle};
+pub use thumbnail::{ThumbnailHandle, ThumbnailOptions};
 #[cfg(feature = "transcode")]
 pub use transcode::Transcoder;
-pub use unbundler::MediaUnbundler;
+pub use unbundle::MediaFile;
 pub use validation::ValidationReport;
-pub use vfr::VfrAnalysis;
-pub use video::{FrameInfo, FrameRange, FrameType, VideoExtractor};
-#[cfg(feature = "video-writer")]
-pub use video_writer::{VideoCodec, VideoWriter, VideoWriterConfig};
+pub use variable_framerate::VariableFrameRateAnalysis;
+pub use video::{FrameMetadata, FrameRange, FrameType, VideoHandle};
+#[cfg(feature = "encode")]
+pub use encode::{VideoCodec, VideoEncoder, VideoEncoderOptions};
 #[cfg(feature = "waveform")]
-pub use waveform::{WaveformBin, WaveformConfig, WaveformData};
+pub use waveform::{WaveformBin, WaveformData, WaveformOptions};

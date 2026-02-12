@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use unbundle::{MediaUnbundler, Remuxer};
+use unbundle::{MediaFile, Remuxer};
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -30,7 +30,7 @@ fn remux_mp4_to_mkv() {
         .expect("Failed to remux");
 
     // Verify the output file can be opened and has video + audio.
-    let unbundler = MediaUnbundler::open(&output_path).expect("Failed to open remuxed file");
+    let unbundler = MediaFile::open(&output_path).expect("Failed to open remuxed file");
     let metadata = unbundler.metadata();
     assert!(metadata.video.is_some(), "Remuxed file should have video");
     assert!(metadata.audio.is_some(), "Remuxed file should have audio");
@@ -53,7 +53,7 @@ fn remux_mkv_to_mp4() {
         .run()
         .expect("Failed to remux");
 
-    let unbundler = MediaUnbundler::open(&output_path).expect("Failed to open remuxed file");
+    let unbundler = MediaFile::open(&output_path).expect("Failed to open remuxed file");
     assert!(unbundler.metadata().video.is_some());
 
     let _ = std::fs::remove_file(&output_path);
@@ -75,7 +75,7 @@ fn remux_exclude_audio() {
         .run()
         .expect("Failed to remux without audio");
 
-    let unbundler = MediaUnbundler::open(&output_path).expect("Failed to open remuxed file");
+    let unbundler = MediaFile::open(&output_path).expect("Failed to open remuxed file");
     let metadata = unbundler.metadata();
     assert!(metadata.video.is_some(), "Should still have video");
     assert!(metadata.audio.is_none(), "Audio should be excluded");
@@ -99,7 +99,7 @@ fn remux_exclude_video() {
         .run()
         .expect("Failed to remux without video");
 
-    let unbundler = MediaUnbundler::open(&output_path).expect("Failed to open remuxed file");
+    let unbundler = MediaFile::open(&output_path).expect("Failed to open remuxed file");
     let metadata = unbundler.metadata();
     assert!(metadata.video.is_none(), "Video should be excluded");
     assert!(metadata.audio.is_some(), "Should still have audio");

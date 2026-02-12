@@ -4,12 +4,12 @@
 
 use std::time::Duration;
 
-use unbundle::MediaUnbundler;
+use unbundle::{MediaFile, UnbundleError};
 
-fn main() -> Result<(), unbundle::UnbundleError> {
+fn main() -> Result<(), UnbundleError> {
     let path = std::env::args().nth(1).expect("Usage: subtitle_search <video_path>");
 
-    let mut unbundler = MediaUnbundler::open(&path)?;
+    let mut unbundler = MediaFile::open(&path)?;
 
     // Display container tags.
     let meta = unbundler.metadata();

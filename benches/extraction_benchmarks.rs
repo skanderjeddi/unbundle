@@ -10,18 +10,18 @@ use std::{path::Path, time::Duration};
 use criterion::Criterion;
 use ffmpeg_next::util::log::Level as LogLevel;
 use unbundle::{
-    AudioFormat, ExtractionConfig, FrameRange, MediaUnbundler,
+    AudioFormat, ExtractOptions, FrameRange, MediaFile,
     PixelFormat, Remuxer,
 };
 
-#[cfg(feature = "hw-accel")]
-use unbundle::HwAccelMode;
-#[cfg(feature = "scene-detection")]
-use unbundle::SceneDetectionConfig;
+#[cfg(feature = "hardware")]
+use unbundle::HardwareAccelerationMode;
+#[cfg(feature = "scene")]
+use unbundle::SceneDetectionOptions;
 
-#[cfg(feature = "async-tokio")]
+#[cfg(feature = "async")]
 use tokio::runtime::Runtime;
-#[cfg(feature = "async-tokio")]
+#[cfg(feature = "async")]
 use tokio_stream::StreamExt;
 
 const SAMPLE_VIDEO: &str = "tests/fixtures/sample_video.mp4";
@@ -38,14 +38,14 @@ fn benchmark_single_frame_extraction(criterion: &mut Criterion) {
 
     criterion.bench_function("extract single frame (sequential)", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _frame = unbundler.video().frame(0).unwrap();
         });
     });
 
     criterion.bench_function("extract single frame (mid-video seek)", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _frame = unbundler.video().frame(75).unwrap();
         });
     });
@@ -58,7 +58,7 @@ fn benchmark_frame_range_extraction(criterion: &mut Criterion) {
 
     criterion.bench_function("extract 10 consecutive frames", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _frames = unbundler.video().frames(FrameRange::Range(0, 9)).unwrap();
         });
     });
@@ -71,7 +71,7 @@ fn benchmark_for_each_frame(criterion: &mut Criterion) {
 
     criterion.bench_function("for_each_frame 10 frames", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             unbundler
                 .video()
                 .for_each_frame(FrameRange::Range(0, 9), |_, _| Ok(()))
@@ -80,14 +80,14 @@ fn benchmark_for_each_frame(criterion: &mut Criterion) {
     });
 }
 
-fn benchmark_frame_iterator(criterion: &mut Criterion) {
+fn benchmark_video_iterator(criterion: &mut Criterion) {
     if !Path::new(SAMPLE_VIDEO).exists() {
         return;
     }
 
     criterion.bench_function("frame_iter 10 frames", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let iter = unbundler.video().frame_iter(FrameRange::Range(0, 9)).unwrap();
             for result in iter {
                 let _ = result.unwrap();
@@ -103,56 +103,56 @@ fn benchmark_pixel_formats(criterion: &mut Criterion) {
 
     criterion.bench_function("extract frame RGBA8", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractionConfig::new()
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+            let config = ExtractOptions::new()
                 .with_pixel_format(PixelFormat::Rgba8);
             let _frames = unbundler
                 .video()
-                .frames_with_config(FrameRange::Range(0, 0), &config)
+                .frames_with_options(FrameRange::Range(0, 0), &config)
                 .unwrap();
         });
     });
 
     criterion.bench_function("extract frame Gray8", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractionConfig::new()
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+            let config = ExtractOptions::new()
                 .with_pixel_format(PixelFormat::Gray8);
             let _frames = unbundler
                 .video()
-                .frames_with_config(FrameRange::Range(0, 0), &config)
+                .frames_with_options(FrameRange::Range(0, 0), &config)
                 .unwrap();
         });
     });
 
     criterion.bench_function("extract frame scaled 320w", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractionConfig::new()
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+            let config = ExtractOptions::new()
                 .with_resolution(Some(320), None);
             let _frames = unbundler
                 .video()
-                .frames_with_config(FrameRange::Range(0, 0), &config)
+                .frames_with_options(FrameRange::Range(0, 0), &config)
                 .unwrap();
         });
     });
 }
 
-fn benchmark_audio_extraction(criterion: &mut Criterion) {
+fn benchmark_audio(criterion: &mut Criterion) {
     if !Path::new(SAMPLE_VIDEO).exists() {
         return;
     }
 
     criterion.bench_function("extract full audio (WAV, to memory)", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _audio = unbundler.audio().extract(AudioFormat::Wav).unwrap();
         });
     });
 
     criterion.bench_function("extract audio range (WAV, 1s-3s)", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _audio = unbundler
                 .audio()
                 .extract_range(
@@ -172,7 +172,7 @@ fn benchmark_validation(criterion: &mut Criterion) {
 
     criterion.bench_function("validate media file", |bencher| {
         bencher.iter(|| {
-            let unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _report = unbundler.validate();
         });
     });
@@ -193,21 +193,21 @@ fn benchmark_remuxing(criterion: &mut Criterion) {
     });
 }
 
-fn benchmark_subtitle_extraction(criterion: &mut Criterion) {
+fn benchmark_subtitle(criterion: &mut Criterion) {
     if !Path::new(SAMPLE_WITH_SUBS).exists() {
         return;
     }
 
     criterion.bench_function("extract subtitle entries", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_WITH_SUBS).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_WITH_SUBS).unwrap();
             let _entries = unbundler.subtitle().extract().unwrap();
         });
     });
 }
 
-#[cfg(feature = "scene-detection")]
-fn benchmark_scene_detection(criterion: &mut Criterion) {
+#[cfg(feature = "scene")]
+fn benchmark_scene(criterion: &mut Criterion) {
     if !Path::new(SAMPLE_VIDEO).exists() {
         return;
     }
@@ -218,15 +218,15 @@ fn benchmark_scene_detection(criterion: &mut Criterion) {
 
     group.bench_function("default threshold", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _scenes = unbundler.video().detect_scenes(None).unwrap();
         });
     });
 
     group.bench_function("low threshold", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-            let config = SceneDetectionConfig { threshold: 1.0 };
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+            let config = SceneDetectionOptions { threshold: 1.0 };
             let _scenes = unbundler.video().detect_scenes(Some(config)).unwrap();
         });
     });
@@ -234,38 +234,38 @@ fn benchmark_scene_detection(criterion: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(not(feature = "scene-detection"))]
-fn benchmark_scene_detection(_criterion: &mut Criterion) {}
+#[cfg(not(feature = "scene"))]
+fn benchmark_scene(_criterion: &mut Criterion) {}
 
-#[cfg(feature = "hw-accel")]
+#[cfg(feature = "hardware")]
 fn benchmark_hwaccel(criterion: &mut Criterion) {
     if !Path::new(SAMPLE_VIDEO).exists() {
         return;
     }
 
-    let mut group = criterion.benchmark_group("hw-accel");
+    let mut group = criterion.benchmark_group("hardware");
     group.sample_size(30);
 
     group.bench_function("auto", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractionConfig::new()
-                .with_hw_accel(HwAccelMode::Auto);
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+            let config = ExtractOptions::new()
+                .with_hardware_acceleration(HardwareAccelerationMode::Auto);
             let _frames = unbundler
                 .video()
-                .frames_with_config(FrameRange::Range(0, 0), &config)
+                .frames_with_options(FrameRange::Range(0, 0), &config)
                 .unwrap();
         });
     });
 
     group.bench_function("software fallback", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractionConfig::new()
-                .with_hw_accel(HwAccelMode::Software);
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+            let config = ExtractOptions::new()
+                .with_hardware_acceleration(HardwareAccelerationMode::Software);
             let _frames = unbundler
                 .video()
-                .frames_with_config(FrameRange::Range(0, 0), &config)
+                .frames_with_options(FrameRange::Range(0, 0), &config)
                 .unwrap();
         });
     });
@@ -273,10 +273,10 @@ fn benchmark_hwaccel(criterion: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(not(feature = "hw-accel"))]
+#[cfg(not(feature = "hardware"))]
 fn benchmark_hwaccel(_criterion: &mut Criterion) {}
 
-#[cfg(feature = "parallel")]
+#[cfg(feature = "rayon")]
 fn benchmark_parallel(criterion: &mut Criterion) {
     if !Path::new(SAMPLE_VIDEO).exists() {
         return;
@@ -287,8 +287,8 @@ fn benchmark_parallel(criterion: &mut Criterion) {
 
     group.bench_function("10 frames", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractionConfig::new();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+            let config = ExtractOptions::new();
             let _frames = unbundler
                 .video()
                 .frames_parallel(FrameRange::Range(0, 9), &config)
@@ -298,8 +298,8 @@ fn benchmark_parallel(criterion: &mut Criterion) {
 
     group.bench_function("specific frames", |bencher| {
         bencher.iter(|| {
-            let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractionConfig::new();
+            let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+            let config = ExtractOptions::new();
             let _frames = unbundler
                 .video()
                 .frames_parallel(
@@ -313,10 +313,10 @@ fn benchmark_parallel(criterion: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(not(feature = "parallel"))]
+#[cfg(not(feature = "rayon"))]
 fn benchmark_parallel(_criterion: &mut Criterion) {}
 
-#[cfg(feature = "async-tokio")]
+#[cfg(feature = "async")]
 fn benchmark_async(criterion: &mut Criterion) {
     if !Path::new(SAMPLE_VIDEO).exists() {
         return;
@@ -329,8 +329,8 @@ fn benchmark_async(criterion: &mut Criterion) {
     group.bench_function("frame_stream 10 frames", |bencher| {
         bencher.iter(|| {
             rt.block_on(async {
-                let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-                let config = ExtractionConfig::new();
+                let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+                let config = ExtractOptions::new();
                 let mut stream = unbundler
                     .video()
                     .frame_stream(FrameRange::Range(0, 9), config)
@@ -346,8 +346,8 @@ fn benchmark_async(criterion: &mut Criterion) {
     group.bench_function("extract_audio", |bencher| {
         bencher.iter(|| {
             rt.block_on(async {
-                let mut unbundler = MediaUnbundler::open(SAMPLE_VIDEO).unwrap();
-                let config = ExtractionConfig::new();
+                let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+                let config = ExtractOptions::new();
                 let _audio = unbundler
                     .audio()
                     .extract_async(AudioFormat::Wav, config)
@@ -361,7 +361,7 @@ fn benchmark_async(criterion: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(not(feature = "async-tokio"))]
+#[cfg(not(feature = "async"))]
 fn benchmark_async(_criterion: &mut Criterion) {}
 
 criterion::criterion_group!(
@@ -369,13 +369,13 @@ criterion::criterion_group!(
     benchmark_single_frame_extraction,
     benchmark_frame_range_extraction,
     benchmark_for_each_frame,
-    benchmark_frame_iterator,
+    benchmark_video_iterator,
     benchmark_pixel_formats,
-    benchmark_audio_extraction,
+    benchmark_audio,
     benchmark_validation,
     benchmark_remuxing,
-    benchmark_subtitle_extraction,
-    benchmark_scene_detection,
+    benchmark_subtitle,
+    benchmark_scene,
     benchmark_hwaccel,
     benchmark_parallel,
     benchmark_async,

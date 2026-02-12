@@ -6,7 +6,7 @@
 use std::error::Error;
 use std::time::Duration;
 
-use unbundle::{FrameRange, MediaUnbundler};
+use unbundle::{FrameRange, MediaFile};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|| "input.mp4".to_string());
 
     println!("Opening {input_path}...");
-    let mut unbundler = MediaUnbundler::open(&input_path)?;
+    let mut unbundler = MediaFile::open(&input_path)?;
 
     // Print video metadata.
     let metadata = unbundler.metadata();

@@ -1,17 +1,17 @@
 //! GIF export from video frames.
 //!
-//! This module provides [`GifConfig`] for configuring animated GIF output
+//! This module provides [`GifOptions`] for configuring animated GIF output
 //! and the internal encoding logic used by
-//! [`VideoExtractor::export_gif`](crate::VideoExtractor).
+//! [`VideoHandle::export_gif`](crate::VideoHandle).
 //!
 //! # Example
 //!
 //! ```no_run
 //! use std::time::Duration;
-//! use unbundle::{FrameRange, GifConfig, MediaUnbundler};
+//! use unbundle::{FrameRange, GifOptions, MediaFile, UnbundleError};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4")?;
-//! let config = GifConfig::new()
+//! let mut unbundler = MediaFile::open("input.mp4")?;
+//! let config = GifOptions::new()
 //!     .width(320)
 //!     .frame_delay(100);
 //!
@@ -20,7 +20,7 @@
 //!     FrameRange::TimeRange(Duration::from_secs(0), Duration::from_secs(5)),
 //!     &config,
 //! )?;
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::fs::File;
@@ -29,14 +29,14 @@ use std::path::Path;
 use gif::{Encoder, Frame, Repeat};
 use image::DynamicImage;
 
-use crate::config::{FrameOutputConfig, PixelFormat};
+use crate::configuration::{FrameOutputOptions, PixelFormat};
 use crate::error::UnbundleError;
 
 /// Configuration for animated GIF export.
 ///
 /// Controls output dimensions, frame delay, repeat behaviour, and quality.
 #[derive(Debug, Clone)]
-pub struct GifConfig {
+pub struct GifOptions {
     /// Target width in pixels. Height is computed to preserve aspect ratio.
     /// `None` means use source resolution.
     pub width: Option<u32>,
@@ -46,7 +46,7 @@ pub struct GifConfig {
     pub repeat: Option<u16>,
 }
 
-impl Default for GifConfig {
+impl Default for GifOptions {
     fn default() -> Self {
         Self {
             width: None,
@@ -56,8 +56,8 @@ impl Default for GifConfig {
     }
 }
 
-impl GifConfig {
-    /// Create a new [`GifConfig`] with default settings.
+impl GifOptions {
+    /// Create a new [`GifOptions`] with default settings.
     pub fn new() -> Self {
         Self::default()
     }
@@ -82,9 +82,9 @@ impl GifConfig {
         self
     }
 
-    /// Build a [`FrameOutputConfig`] matching this GIF configuration.
-    pub(crate) fn to_frame_output_config(&self, _source_width: u32, _source_height: u32) -> FrameOutputConfig {
-        let mut foc = FrameOutputConfig::default();
+    /// Build a [`FrameOutputOptions`] matching this GIF configuration.
+    pub(crate) fn to_frame_output_config(&self, _source_width: u32, _source_height: u32) -> FrameOutputOptions {
+        let mut foc = FrameOutputOptions::default();
         // GIF is always RGBA8 for transparency / palette handling.
         foc.pixel_format = PixelFormat::Rgba8;
         if let Some(w) = self.width {
@@ -101,7 +101,7 @@ impl GifConfig {
 pub(crate) fn encode_gif<P: AsRef<Path>>(
     path: P,
     frames: &[DynamicImage],
-    config: &GifConfig,
+    config: &GifOptions,
 ) -> Result<(), UnbundleError> {
     log::debug!(
         "Encoding {} frames to GIF file {:?} (width={:?}, delay={})",
@@ -151,7 +151,7 @@ pub(crate) fn encode_gif<P: AsRef<Path>>(
 /// Returns the raw GIF bytes.
 pub(crate) fn encode_gif_to_memory(
     frames: &[DynamicImage],
-    config: &GifConfig,
+    config: &GifOptions,
 ) -> Result<Vec<u8>, UnbundleError> {
     log::debug!(
         "Encoding {} frames to GIF in memory (width={:?}, delay={})",

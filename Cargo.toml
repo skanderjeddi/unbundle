@@ -1,6 +1,6 @@
 [package]
 name = "unbundle"
-version = "3.0.0"
+version = "4.0.0"
 edition = "2024"
 authors = ["Skander Jeddi <skanderjeddi@fastmail.com>"]
 description = "Unbundle media files - extract still frames, audio tracks, and subtitles from video files"
@@ -22,12 +22,12 @@ image = "0.25"
 log = "0.4"
 thiserror = "2.0"
 
-# Optional: async support (feature = "async-tokio")
+# Optional: async support (feature = "async")
 tokio = { version = "1", features = ["rt", "sync", "macros"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
 futures-core = { version = "0.3", optional = true }
 
-# Optional: parallel processing (feature = "parallel")
+# Optional: parallel processing (feature = "rayon")
 rayon = { version = "1.11", optional = true }
 
 # Optional: GIF export (feature = "gif")
@@ -35,16 +35,16 @@ gif = { version = "0.13", optional = true }
 
 [features]
 default = []
-async-tokio = ["tokio", "tokio-stream", "futures-core"]
-parallel = ["rayon"]
-hw-accel = []
-scene-detection = []
+async = ["tokio", "tokio-stream", "futures-core"]
+rayon = ["dep:rayon"]
+hardware = []
+scene = []
 gif = ["dep:gif"]
 waveform = []
 loudness = []
 transcode = []
-video-writer = []
-full = ["async-tokio", "parallel", "hw-accel", "scene-detection", "gif", "waveform", "loudness", "transcode", "video-writer"]
+encode = []
+full = ["async", "rayon", "hardware", "scene", "gif", "waveform", "loudness", "transcode", "encode"]
 
 [dev-dependencies]
 criterion = "0.5"
@@ -55,19 +55,39 @@ tokio-stream = "0.1"
 
 [[example]]
 name = "async_extraction"
-required-features = ["async-tokio"]
+required-features = ["async"]
 
 [[example]]
-name = "parallel_extraction"
-required-features = ["parallel"]
+name = "rayon"
+required-features = ["rayon"]
 
 [[example]]
-name = "scene_detection"
-required-features = ["scene-detection"]
+name = "scene"
+required-features = ["scene"]
 
 [[example]]
-name = "hw_acceleration"
-required-features = ["hw-accel"]
+name = "hardware_acceleration"
+required-features = ["hardware"]
+
+[[example]]
+name = "gif_export"
+required-features = ["gif"]
+
+[[example]]
+name = "waveform"
+required-features = ["waveform"]
+
+[[example]]
+name = "loudness"
+required-features = ["loudness"]
+
+[[example]]
+name = "transcode"
+required-features = ["transcode"]
+
+[[example]]
+name = "video_encoder"
+required-features = ["encode"]
 
 [[bench]]
 name = "extraction_benchmarks"

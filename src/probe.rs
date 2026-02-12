@@ -6,32 +6,32 @@
 //! per file.
 //!
 //! For full extraction capabilities, use
-//! [`MediaUnbundler::open`](crate::MediaUnbundler::open) instead.
+//! [`MediaFile::open`](crate::MediaFile::open) instead.
 
 use std::path::Path;
 
 use crate::error::UnbundleError;
 use crate::metadata::MediaMetadata;
-use crate::unbundler::MediaUnbundler;
+use crate::unbundle::MediaFile;
 
 /// Lightweight media file probe.
 ///
 /// Opens the file, extracts metadata, and immediately closes the demuxer.
 /// The resulting [`MediaMetadata`] is identical to what
-/// [`MediaUnbundler::metadata`](crate::MediaUnbundler::metadata) returns, but
+/// [`MediaFile::metadata`](crate::MediaFile::metadata) returns, but
 /// without keeping the file open for extraction.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use unbundle::MediaProbe;
+/// use unbundle::{MediaProbe, UnbundleError};
 ///
 /// let metadata = MediaProbe::probe("input.mp4")?;
 /// println!("Duration: {:?}, format: {}", metadata.duration, metadata.format);
 /// if let Some(video) = &metadata.video {
 ///     println!("Video: {}x{} @ {} fps", video.width, video.height, video.frames_per_second);
 /// }
-/// # Ok::<(), unbundle::UnbundleError>(())
+/// # Ok::<(), UnbundleError>(())
 /// ```
 pub struct MediaProbe;
 
@@ -50,15 +50,15 @@ impl MediaProbe {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaProbe;
+    /// use unbundle::{MediaProbe, UnbundleError};
     ///
     /// let metadata = MediaProbe::probe("video.mkv")?;
     /// println!("{:?}", metadata);
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn probe<P: AsRef<Path>>(path: P) -> Result<MediaMetadata, UnbundleError> {
         log::debug!("Probing media file: {}", path.as_ref().display());
-        let unbundler = MediaUnbundler::open(path)?;
+        let unbundler = MediaFile::open(path)?;
         Ok(unbundler.metadata.clone())
     }
 

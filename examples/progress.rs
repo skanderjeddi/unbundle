@@ -7,7 +7,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use unbundle::{
-    CancellationToken, ExtractionConfig, FrameRange, MediaUnbundler,
+    CancellationToken, ExtractOptions, FrameRange, MediaFile,
     ProgressCallback, ProgressInfo,
 };
 
@@ -35,23 +35,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         .nth(1)
         .unwrap_or_else(|| "input.mp4".to_string());
 
-    let mut unbundler = MediaUnbundler::open(&input_path)?;
+    let mut unbundler = MediaFile::open(&input_path)?;
 
     // ── Progress callback ──────────────────────────────────────────
     println!("Extracting frames with progress reporting...");
-    let config = ExtractionConfig::new()
+    let config = ExtractOptions::new()
         .with_progress(Arc::new(PrintProgress))
         .with_batch_size(5);
 
     let frames = unbundler
         .video()
-        .frames_with_config(FrameRange::Range(0, 29), &config)?;
+        .frames_with_options(FrameRange::Range(0, 29), &config)?;
     println!("Extracted {} frames\n", frames.len());
 
     // ── Cancellation token ─────────────────────────────────────────
     println!("Demonstrating cancellation...");
     let token = CancellationToken::new();
-    let cancel_config = ExtractionConfig::new()
+    let cancel_config = ExtractOptions::new()
         .with_cancellation(token.clone());
 
     // Cancel immediately to demonstrate the mechanism.
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let result = unbundler
         .video()
-        .frames_with_config(FrameRange::Range(0, 99), &cancel_config);
+        .frames_with_options(FrameRange::Range(0, 99), &cancel_config);
 
     match result {
         Err(ref e) if e.to_string().contains("ancelled") => {

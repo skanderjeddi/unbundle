@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use unbundle::MediaUnbundler;
+use unbundle::MediaFile;
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -25,7 +25,7 @@ fn validate_normal_video() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let unbundler = MediaFile::open(path).expect("Failed to open fixture");
     let report = unbundler.validate();
 
     assert!(report.is_valid(), "Normal video should be valid");
@@ -39,7 +39,7 @@ fn validate_has_info() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let unbundler = MediaFile::open(path).expect("Failed to open fixture");
     let report = unbundler.validate();
 
     assert!(!report.info.is_empty(), "Expected info entries");
@@ -58,7 +58,7 @@ fn validate_audio_only() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let unbundler = MediaFile::open(path).expect("Failed to open fixture");
     let report = unbundler.validate();
 
     assert!(report.is_valid(), "Audio-only file should still be valid");
@@ -73,7 +73,7 @@ fn validate_video_only() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let unbundler = MediaFile::open(path).expect("Failed to open fixture");
     let report = unbundler.validate();
 
     assert!(report.is_valid(), "Video-only file should still be valid");
@@ -88,7 +88,7 @@ fn validate_display_impl() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let unbundler = MediaFile::open(path).expect("Failed to open fixture");
     let report = unbundler.validate();
     let display = format!("{report}");
 
@@ -103,7 +103,7 @@ fn validate_issue_count() {
         return;
     }
 
-    let unbundler = MediaUnbundler::open(path).expect("Failed to open fixture");
+    let unbundler = MediaFile::open(path).expect("Failed to open fixture");
     let report = unbundler.validate();
 
     let expected = report.info.len() + report.warnings.len() + report.errors.len();

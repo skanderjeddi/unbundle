@@ -2,9 +2,11 @@
 //!
 //! Requires the `loudness` feature and test fixtures.
 
+#![cfg(feature = "loudness")]
+
 use std::path::Path;
 
-use unbundle::MediaUnbundler;
+use unbundle::MediaFile;
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -17,7 +19,7 @@ fn analyze_loudness() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
     let info = unbundler.audio().analyze_loudness().expect("loudness");
 
     assert!(info.peak > 0.0, "peak should be positive");
@@ -35,7 +37,7 @@ fn loudness_peak_ge_rms() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
     let info = unbundler.audio().analyze_loudness().expect("loudness");
 
     assert!(
@@ -59,7 +61,7 @@ fn loudness_on_audio_only() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("open");
+    let mut unbundler = MediaFile::open(path).expect("open");
     let info = unbundler.audio().analyze_loudness().expect("loudness");
 
     assert!(info.total_samples > 0);

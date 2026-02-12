@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use unbundle::{MediaUnbundler, ThumbnailConfig, ThumbnailGenerator};
+use unbundle::{MediaFile, ThumbnailHandle, ThumbnailOptions};
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -20,8 +20,8 @@ fn thumbnail_at_timestamp() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
-    let thumb = ThumbnailGenerator::at_timestamp(
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
+    let thumb = ThumbnailHandle::at_timestamp(
         &mut unbundler,
         Duration::from_secs(1),
         320,
@@ -46,8 +46,8 @@ fn thumbnail_at_frame() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
-    let thumb = ThumbnailGenerator::at_frame(&mut unbundler, 30, 200)
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
+    let thumb = ThumbnailHandle::at_frame(&mut unbundler, 30, 200)
         .expect("Failed to generate thumbnail");
 
     assert!(
@@ -64,11 +64,11 @@ fn thumbnail_preserves_aspect_ratio() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let video_meta = unbundler.metadata().video.as_ref().unwrap().clone();
     let original_ratio = video_meta.width as f64 / video_meta.height as f64;
 
-    let thumb = ThumbnailGenerator::at_frame(&mut unbundler, 0, 640)
+    let thumb = ThumbnailHandle::at_frame(&mut unbundler, 0, 640)
         .expect("Failed to generate thumbnail");
     let thumb_ratio = thumb.width() as f64 / thumb.height() as f64;
 
@@ -79,16 +79,16 @@ fn thumbnail_preserves_aspect_ratio() {
 }
 
 #[test]
-fn thumbnail_grid_dimensions() {
+fn thumbnail_dimensions() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
         eprintln!("Skipping: fixture '{path}' not found.");
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
-    let config = ThumbnailConfig::new(3, 2).with_thumbnail_width(160);
-    let grid = ThumbnailGenerator::grid(&mut unbundler, &config)
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
+    let config = ThumbnailOptions::new(3, 2).with_thumbnail_width(160);
+    let grid = ThumbnailHandle::grid(&mut unbundler, &config)
         .expect("Failed to generate grid");
 
     // Grid should be 3 * 160 = 480 wide.
@@ -97,18 +97,18 @@ fn thumbnail_grid_dimensions() {
 }
 
 #[test]
-fn thumbnail_grid_default_width() {
+fn thumbnail_default_width() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
         eprintln!("Skipping: fixture '{path}' not found.");
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
-    let config = ThumbnailConfig::new(2, 2);
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
+    let config = ThumbnailOptions::new(2, 2);
     assert_eq!(config.thumbnail_width, 320, "Default width should be 320");
 
-    let grid = ThumbnailGenerator::grid(&mut unbundler, &config)
+    let grid = ThumbnailHandle::grid(&mut unbundler, &config)
         .expect("Failed to generate grid");
 
     assert_eq!(grid.width(), 640, "Grid width should be 2 × 320 = 640");
@@ -122,8 +122,8 @@ fn smart_thumbnail_not_black() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
-    let thumb = ThumbnailGenerator::smart(&mut unbundler, 10, 320)
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
+    let thumb = ThumbnailHandle::smart(&mut unbundler, 10, 320)
         .expect("Failed to generate smart thumbnail");
 
     // Smart thumbnail should pick a frame with content, not pure black.
@@ -146,8 +146,8 @@ fn smart_thumbnail_fits_max_dimension() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
-    let thumb = ThumbnailGenerator::smart(&mut unbundler, 5, 256)
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
+    let thumb = ThumbnailHandle::smart(&mut unbundler, 5, 256)
         .expect("Failed to generate smart thumbnail");
 
     assert!(
@@ -160,7 +160,7 @@ fn smart_thumbnail_fits_max_dimension() {
 
 #[test]
 fn thumbnail_config_builder() {
-    let config = ThumbnailConfig::new(4, 3).with_thumbnail_width(200);
+    let config = ThumbnailOptions::new(4, 3).with_thumbnail_width(200);
     assert_eq!(config.columns, 4);
     assert_eq!(config.rows, 3);
     assert_eq!(config.thumbnail_width, 200);

@@ -1,15 +1,15 @@
 //! Media file validation.
 //!
-//! Provides [`crate::MediaUnbundler::validate`] which inspects a media file and
+//! Provides [`crate::MediaFile::validate`] which inspects a media file and
 //! returns a [`ValidationReport`] describing its structure and any potential
 //! issues.
 //!
 //! # Example
 //!
 //! ```no_run
-//! use unbundle::MediaUnbundler;
+//! use unbundle::{MediaFile, UnbundleError};
 //!
-//! let unbundler = MediaUnbundler::open("input.mp4")?;
+//! let unbundler = MediaFile::open("input.mp4")?;
 //! let report = unbundler.validate();
 //! if report.is_valid() {
 //!     println!("File is valid");
@@ -18,7 +18,7 @@
 //!         println!("Warning: {warning}");
 //!     }
 //! }
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -28,7 +28,7 @@ use crate::metadata::MediaMetadata;
 
 /// Summary of media file validation.
 ///
-/// Produced by [`MediaUnbundler::validate`](crate::MediaUnbundler::validate).
+/// Produced by [`MediaFile::validate`](crate::MediaFile::validate).
 /// Contains lists of informational notices, warnings, and errors found during
 /// validation.
 #[derive(Debug, Clone, Default)]
@@ -76,7 +76,7 @@ impl Display for ValidationReport {
 
 /// Run validation checks on the cached metadata.
 ///
-/// This function is called by [`MediaUnbundler::validate`].
+/// This function is called by [`MediaFile::validate`].
 pub(crate) fn validate_metadata(metadata: &MediaMetadata) -> ValidationReport {
     let mut report = ValidationReport::default();
 

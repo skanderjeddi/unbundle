@@ -1,6 +1,6 @@
 //! Video frame extraction.
 //!
-//! This module provides [`VideoExtractor`] for extracting still frames from
+//! This module provides [`VideoHandle`] for extracting still frames from
 //! video files, and [`FrameRange`] for specifying which frames to extract.
 //! Extracted frames are returned as [`image::DynamicImage`] values that can be
 //! saved, manipulated, or converted to other formats.
@@ -13,21 +13,28 @@ use ffmpeg_next::{
     decoder::Video as VideoDecoder,
     format::Pixel,
     frame::Video as VideoFrame,
+    Rational,
     software::scaling::{Context as ScalingContext, Flags as ScalingFlags},
     util::picture::Type as PictureType,
 };
 use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 
 use crate::{
-    config::{ExtractionConfig, FrameOutputConfig, PixelFormat},
+    configuration::{ExtractOptions, FrameOutputOptions, PixelFormat},
     error::UnbundleError,
-    iterator::FrameIterator,
+    video_iterator::FrameIterator,
     metadata::VideoMetadata,
     progress::{OperationType, ProgressTracker},
-    unbundler::MediaUnbundler,
+    unbundle::MediaFile,
 };
-#[cfg(feature = "async-tokio")]
+#[cfg(feature = "async")]
 use crate::stream::FrameStream;
+#[cfg(feature = "gif")]
+use crate::gif::GifOptions;
+#[cfg(feature = "scene")]
+use crate::scene::{SceneChange, SceneDetectionOptions};
+use crate::keyframe::{GroupOfPicturesInfo, KeyFrameMetadata};
+use crate::variable_framerate::VariableFrameRateAnalysis;
 
 /// The type of a decoded video frame (I, P, B, etc.).
 ///
@@ -57,22 +64,22 @@ pub enum FrameType {
 /// Metadata about a single decoded video frame.
 ///
 /// Returned alongside the decoded [`DynamicImage`] by methods such as
-/// [`VideoExtractor::frame_with_info`] and
-/// [`VideoExtractor::frames_with_info`].
+/// [`VideoHandle::frame_and_metadata`] and
+/// [`VideoHandle::frames_and_metadata`].
 ///
 /// # Example
 ///
 /// ```no_run
-/// use unbundle::MediaUnbundler;
+/// use unbundle::{MediaFile, UnbundleError};
 ///
-/// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-/// let (image, info) = unbundler.video().frame_with_info(0)?;
+/// let mut unbundler = MediaFile::open("input.mp4")?;
+/// let (image, info) = unbundler.video().frame_and_metadata(0)?;
 /// println!("Frame {} at {:?}, keyframe={}", info.frame_number,
 ///     info.timestamp, info.is_keyframe);
-/// # Ok::<(), unbundle::UnbundleError>(())
+/// # Ok::<(), UnbundleError>(())
 /// ```
 #[derive(Debug, Clone)]
-pub struct FrameInfo {
+pub struct FrameMetadata {
     /// The zero-indexed frame number within the video.
     pub frame_number: u64,
     /// Presentation timestamp as a [`Duration`] from the start of the video.
@@ -87,7 +94,7 @@ pub struct FrameInfo {
 
 /// Specifies which frames to extract from a video.
 ///
-/// Used with [`VideoExtractor::frames`] to extract multiple frames in a single
+/// Used with [`VideoHandle::frames`] to extract multiple frames in a single
 /// call.
 ///
 /// # Example
@@ -95,9 +102,9 @@ pub struct FrameInfo {
 /// ```no_run
 /// use std::time::Duration;
 ///
-/// use unbundle::{FrameRange, MediaUnbundler};
+/// use unbundle::{FrameRange, MediaFile};
 ///
-/// let mut unbundler = MediaUnbundler::open("input.mp4").unwrap();
+/// let mut unbundler = MediaFile::open("input.mp4").unwrap();
 ///
 /// // Extract every 30th frame
 /// let frames = unbundler.video().frames(FrameRange::Interval(30)).unwrap();
@@ -126,34 +133,34 @@ pub enum FrameRange {
     /// ```no_run
     /// use std::time::Duration;
     ///
-    /// use unbundle::{FrameRange, MediaUnbundler};
+    /// use unbundle::{FrameRange, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let frames = unbundler.video().frames(FrameRange::Segments(vec![
     ///     (Duration::from_secs(0), Duration::from_secs(2)),
     ///     (Duration::from_secs(10), Duration::from_secs(12)),
     /// ]))?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     Segments(Vec<(Duration, Duration)>),
 }
 
 /// Video frame extraction operations.
 ///
-/// Obtained via [`MediaUnbundler::video`] or
-/// [`MediaUnbundler::video_track`]. Each extraction method creates a
+/// Obtained via [`MediaFile::video`] or
+/// [`MediaFile::video_track`]. Each extraction method creates a
 /// fresh decoder, seeks to the relevant position, and decodes frames. The
 /// decoder is dropped when the method returns.
 ///
 /// Frames are returned as [`DynamicImage`], with pixel format controlled
-/// by [`ExtractionConfig`].
-pub struct VideoExtractor<'a> {
-    pub(crate) unbundler: &'a mut MediaUnbundler,
+/// by [`ExtractOptions`].
+pub struct VideoHandle<'a> {
+    pub(crate) unbundler: &'a mut MediaFile,
     /// Optional stream index override for multi-track selection.
     pub(crate) stream_index: Option<usize>,
 }
 
-impl<'a> VideoExtractor<'a> {
+impl<'a> VideoHandle<'a> {
     /// Resolve the video stream index to use.
     fn resolve_video_stream_index(&self) -> Result<usize, UnbundleError> {
         self.stream_index
@@ -176,44 +183,44 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let frame = unbundler.video().frame(100)?;
     /// frame.save("frame_100.png")?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn frame(&mut self, frame_number: u64) -> Result<DynamicImage, UnbundleError> {
-        self.frame_with_single_config(frame_number, &ExtractionConfig::default())
+        self.frame_with_options(frame_number, &ExtractOptions::default())
     }
 
     /// Extract a single frame with custom configuration.
     ///
-    /// Like [`frame`](VideoExtractor::frame) but respects the pixel format,
+    /// Like [`frame`](VideoHandle::frame) but respects the pixel format,
     /// resolution, and hardware acceleration settings from the given
-    /// [`ExtractionConfig`].
+    /// [`ExtractOptions`].
     ///
     /// # Errors
     ///
-    /// Same as [`frame`](VideoExtractor::frame), plus
+    /// Same as [`frame`](VideoHandle::frame), plus
     /// [`UnbundleError::Cancelled`] if cancellation is requested.
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{ExtractionConfig, MediaUnbundler, PixelFormat};
+    /// use unbundle::{ExtractOptions, MediaFile, PixelFormat, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let config = ExtractionConfig::new()
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let config = ExtractOptions::new()
     ///     .with_pixel_format(PixelFormat::Gray8)
     ///     .with_resolution(Some(320), None);
-    /// let frame = unbundler.video().frame_with_single_config(100, &config)?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// let frame = unbundler.video().frame_with_options(100, &config)?;
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn frame_with_single_config(
+    pub fn frame_with_options(
         &mut self,
         frame_number: u64,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
     ) -> Result<DynamicImage, UnbundleError> {
         let video_stream_index = self.resolve_video_stream_index()?;
 
@@ -265,7 +272,7 @@ impl<'a> VideoExtractor<'a> {
         )?;
 
         // Seek to the nearest keyframe before the target frame.
-        let target_timestamp = crate::utilities::frame_number_to_stream_timestamp(
+        let target_timestamp = crate::conversion::frame_number_to_stream_timestamp(
             frame_number,
             frames_per_second,
             time_base,
@@ -290,7 +297,7 @@ impl<'a> VideoExtractor<'a> {
             while decoder.receive_frame(&mut decoded_frame).is_ok() {
                 let pts = decoded_frame.pts().unwrap_or(0);
                 let current_frame_number =
-                    crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 if current_frame_number == frame_number {
                     scaler.run(&decoded_frame, &mut rgb_frame)?;
@@ -321,7 +328,7 @@ impl<'a> VideoExtractor<'a> {
         while decoder.receive_frame(&mut decoded_frame).is_ok() {
             let pts = decoded_frame.pts().unwrap_or(0);
             let current_frame_number =
-                crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
             if current_frame_number >= frame_number {
                 scaler.run(&decoded_frame, &mut rgb_frame)?;
@@ -342,37 +349,37 @@ impl<'a> VideoExtractor<'a> {
     /// Extract a single frame at a specific timestamp.
     ///
     /// Converts the timestamp to a frame number using the video's frame rate
-    /// and delegates to [`frame`](VideoExtractor::frame).
+    /// and delegates to [`frame`](VideoHandle::frame).
     ///
     /// # Errors
     ///
     /// Returns [`UnbundleError::InvalidTimestamp`] if the timestamp exceeds the
-    /// media duration, or any error from [`frame`](VideoExtractor::frame).
+    /// media duration, or any error from [`frame`](VideoHandle::frame).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     /// use std::time::Duration;
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let frame = unbundler.video().frame_at(Duration::from_secs(30))?;
     /// frame.save("frame_at_30s.png")?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn frame_at(&mut self, timestamp: Duration) -> Result<DynamicImage, UnbundleError> {
-        self.frame_at_with_config(timestamp, &ExtractionConfig::default())
+        self.frame_at_with_options(timestamp, &ExtractOptions::default())
     }
 
     /// Extract a single frame at a timestamp with custom configuration.
     ///
-    /// Like [`frame_at`](VideoExtractor::frame_at) but respects the pixel
+    /// Like [`frame_at`](VideoHandle::frame_at) but respects the pixel
     /// format, resolution, and hardware acceleration settings from the given
-    /// [`ExtractionConfig`].
+    /// [`ExtractOptions`].
     ///
     /// # Errors
     ///
-    /// Same as [`frame_at`](VideoExtractor::frame_at), plus
+    /// Same as [`frame_at`](VideoHandle::frame_at), plus
     /// [`UnbundleError::Cancelled`] if cancellation is requested.
     ///
     /// # Example
@@ -380,21 +387,21 @@ impl<'a> VideoExtractor<'a> {
     /// ```no_run
     /// use std::time::Duration;
     ///
-    /// use unbundle::{ExtractionConfig, MediaUnbundler, PixelFormat};
+    /// use unbundle::{ExtractOptions, MediaFile, PixelFormat, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let config = ExtractionConfig::new()
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let config = ExtractOptions::new()
     ///     .with_pixel_format(PixelFormat::Rgba8);
-    /// let frame = unbundler.video().frame_at_with_config(
+    /// let frame = unbundler.video().frame_at_with_options(
     ///     Duration::from_secs(30),
     ///     &config,
     /// )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn frame_at_with_config(
+    pub fn frame_at_with_options(
         &mut self,
         timestamp: Duration,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
     ) -> Result<DynamicImage, UnbundleError> {
         let duration = self.unbundler.metadata.duration;
         if timestamp > duration {
@@ -410,64 +417,64 @@ impl<'a> VideoExtractor<'a> {
             .frames_per_second;
 
         let frame_number =
-            crate::utilities::timestamp_to_frame_number(timestamp, frames_per_second);
-        self.frame_with_single_config(frame_number, config)
+            crate::conversion::timestamp_to_frame_number(timestamp, frames_per_second);
+        self.frame_with_options(frame_number, config)
     }
 
     /// Extract a single frame by number, returning both the image and its
-    /// [`FrameInfo`] metadata.
+    /// [`FrameMetadata`] metadata.
     ///
     /// This combines frame extraction with metadata collection (PTS,
     /// keyframe flag, picture type) in a single decode pass.
     ///
     /// # Errors
     ///
-    /// Same as [`frame`](VideoExtractor::frame).
+    /// Same as [`frame`](VideoHandle::frame).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let (image, info) = unbundler.video().frame_with_info(42)?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let (image, info) = unbundler.video().frame_and_metadata(42)?;
     /// println!("PTS: {:?}, keyframe: {}", info.pts, info.is_keyframe);
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn frame_with_info(
+    pub fn frame_and_metadata(
         &mut self,
         frame_number: u64,
-    ) -> Result<(DynamicImage, FrameInfo), UnbundleError> {
-        self.frame_with_info_config(frame_number, &ExtractionConfig::default())
+    ) -> Result<(DynamicImage, FrameMetadata), UnbundleError> {
+        self.frame_and_metadata_with_options(frame_number, &ExtractOptions::default())
     }
 
-    /// Extract a single frame with [`FrameInfo`] and custom configuration.
+    /// Extract a single frame with [`FrameMetadata`] and custom configuration.
     ///
-    /// Like [`frame_with_info`](VideoExtractor::frame_with_info) but respects
+    /// Like [`frame_and_metadata`](VideoHandle::frame_and_metadata) but respects
     /// the pixel format, resolution, and hardware acceleration settings from
-    /// the given [`ExtractionConfig`].
+    /// the given [`ExtractOptions`].
     ///
     /// # Errors
     ///
-    /// Same as [`frame_with_info`](VideoExtractor::frame_with_info), plus
+    /// Same as [`frame_and_metadata`](VideoHandle::frame_and_metadata), plus
     /// [`UnbundleError::Cancelled`] if cancellation is requested.
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{ExtractionConfig, MediaUnbundler, PixelFormat};
+    /// use unbundle::{ExtractOptions, MediaFile, PixelFormat, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let config = ExtractionConfig::new()
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let config = ExtractOptions::new()
     ///     .with_pixel_format(PixelFormat::Gray8);
-    /// let (image, info) = unbundler.video().frame_with_info_config(42, &config)?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// let (image, info) = unbundler.video().frame_and_metadata_with_options(42, &config)?;
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn frame_with_info_config(
+    pub fn frame_and_metadata_with_options(
         &mut self,
         frame_number: u64,
-        config: &ExtractionConfig,
-    ) -> Result<(DynamicImage, FrameInfo), UnbundleError> {
+        config: &ExtractOptions,
+    ) -> Result<(DynamicImage, FrameMetadata), UnbundleError> {
         let video_stream_index = self.resolve_video_stream_index()?;
 
         let video_metadata = self
@@ -515,7 +522,7 @@ impl<'a> VideoExtractor<'a> {
             ScalingFlags::BILINEAR,
         )?;
 
-        let target_timestamp = crate::utilities::frame_number_to_stream_timestamp(
+        let target_timestamp = crate::conversion::frame_number_to_stream_timestamp(
             frame_number,
             frames_per_second,
             time_base,
@@ -538,7 +545,7 @@ impl<'a> VideoExtractor<'a> {
             while decoder.receive_frame(&mut decoded_frame).is_ok() {
                 let pts = decoded_frame.pts().unwrap_or(0);
                 let current_frame_number =
-                    crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 if current_frame_number >= frame_number {
                     let info = build_frame_info(
@@ -562,7 +569,7 @@ impl<'a> VideoExtractor<'a> {
         while decoder.receive_frame(&mut decoded_frame).is_ok() {
             let pts = decoded_frame.pts().unwrap_or(0);
             let current_frame_number =
-                crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
             if current_frame_number >= frame_number {
                 let info = build_frame_info(
@@ -586,48 +593,48 @@ impl<'a> VideoExtractor<'a> {
         )))
     }
 
-    /// Extract multiple frames with their [`FrameInfo`] metadata.
+    /// Extract multiple frames with their [`FrameMetadata`] metadata.
     ///
-    /// Like [`frames`](VideoExtractor::frames) but returns
-    /// `(DynamicImage, FrameInfo)` pairs, giving access to PTS, keyframe
+    /// Like [`frames`](VideoHandle::frames) but returns
+    /// `(DynamicImage, FrameMetadata)` pairs, giving access to PTS, keyframe
     /// flags, and picture types for every extracted frame.
     ///
     /// # Errors
     ///
-    /// Same as [`frames`](VideoExtractor::frames).
+    /// Same as [`frames`](VideoHandle::frames).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{FrameRange, MediaUnbundler};
+    /// use unbundle::{FrameRange, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let results = unbundler.video().frames_with_info(FrameRange::Range(0, 9))?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let results = unbundler.video().frames_and_metadata(FrameRange::Range(0, 9))?;
     /// for (image, info) in &results {
     ///     println!("Frame {} — type {:?}", info.frame_number, info.frame_type);
     /// }
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn frames_with_info(
+    pub fn frames_and_metadata(
         &mut self,
         range: FrameRange,
-    ) -> Result<Vec<(DynamicImage, FrameInfo)>, UnbundleError> {
-        self.frames_with_info_config(range, &ExtractionConfig::default())
+    ) -> Result<Vec<(DynamicImage, FrameMetadata)>, UnbundleError> {
+        self.frames_and_metadata_with_options(range, &ExtractOptions::default())
     }
 
-    /// Extract multiple frames with [`FrameInfo`] and progress/cancellation.
+    /// Extract multiple frames with [`FrameMetadata`] and progress/cancellation.
     ///
-    /// Like [`frames_with_config`](VideoExtractor::frames_with_config) but
-    /// includes [`FrameInfo`] for each frame.
+    /// Like [`frames_with_options`](VideoHandle::frames_with_options) but
+    /// includes [`FrameMetadata`] for each frame.
     ///
     /// # Errors
     ///
-    /// Same as [`frames_with_config`](VideoExtractor::frames_with_config).
-    pub fn frames_with_info_config(
+    /// Same as [`frames_with_options`](VideoHandle::frames_with_options).
+    pub fn frames_and_metadata_with_options(
         &mut self,
         range: FrameRange,
-        config: &ExtractionConfig,
-    ) -> Result<Vec<(DynamicImage, FrameInfo)>, UnbundleError> {
+        config: &ExtractOptions,
+    ) -> Result<Vec<(DynamicImage, FrameMetadata)>, UnbundleError> {
         let video_metadata = self
             .unbundler
             .metadata
@@ -668,23 +675,23 @@ impl<'a> VideoExtractor<'a> {
 
     /// Extract a frame and save it directly to a file.
     ///
-    /// Convenience method that combines [`frame`](VideoExtractor::frame) with
+    /// Convenience method that combines [`frame`](VideoHandle::frame) with
     /// [`DynamicImage::save`]. The output format is inferred from the file
     /// extension.
     ///
     /// # Errors
     ///
-    /// Returns errors from [`frame`](VideoExtractor::frame), or
+    /// Returns errors from [`frame`](VideoHandle::frame), or
     /// [`UnbundleError::ImageError`] if the image cannot be written.
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// unbundler.video().save_frame(0, "first_frame.png")?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn save_frame<P: AsRef<Path>>(
         &mut self,
@@ -698,13 +705,13 @@ impl<'a> VideoExtractor<'a> {
 
     /// Extract a frame at a timestamp and save it directly to a file.
     ///
-    /// Convenience method that combines [`frame_at`](VideoExtractor::frame_at)
+    /// Convenience method that combines [`frame_at`](VideoHandle::frame_at)
     /// with [`DynamicImage::save`]. The output format is inferred from the file
     /// extension.
     ///
     /// # Errors
     ///
-    /// Returns errors from [`frame_at`](VideoExtractor::frame_at), or
+    /// Returns errors from [`frame_at`](VideoHandle::frame_at), or
     /// [`UnbundleError::ImageError`] if the image cannot be written.
     ///
     /// # Example
@@ -712,11 +719,11 @@ impl<'a> VideoExtractor<'a> {
     /// ```no_run
     /// use std::time::Duration;
     ///
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// unbundler.video().save_frame_at(Duration::from_secs(5), "frame_5s.png")?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn save_frame_at<P: AsRef<Path>>(
         &mut self,
@@ -740,20 +747,20 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{FrameRange, MediaUnbundler};
+    /// use unbundle::{FrameRange, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let frames = unbundler.video().frames(FrameRange::Range(0, 9))?;
     /// assert_eq!(frames.len(), 10);
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn frames(&mut self, range: FrameRange) -> Result<Vec<DynamicImage>, UnbundleError> {
-        self.frames_with_config(range, &ExtractionConfig::default())
+        self.frames_with_options(range, &ExtractOptions::default())
     }
 
     /// Process frames one at a time without collecting them into a `Vec`.
     ///
-    /// This is a streaming alternative to [`frames`](VideoExtractor::frames)
+    /// This is a streaming alternative to [`frames`](VideoHandle::frames)
     /// that calls `callback` for each decoded frame. The callback receives the
     /// frame number and the decoded image. Processing stops if the callback
     /// returns an error.
@@ -765,9 +772,9 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{FrameRange, MediaUnbundler};
+    /// use unbundle::{FrameRange, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// unbundler.video().for_each_frame(
     ///     FrameRange::Range(0, 9),
     ///     |frame_number, image| {
@@ -775,7 +782,7 @@ impl<'a> VideoExtractor<'a> {
     ///         Ok(())
     ///     },
     /// )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn for_each_frame<F>(
         &mut self,
@@ -785,25 +792,25 @@ impl<'a> VideoExtractor<'a> {
     where
         F: FnMut(u64, DynamicImage) -> Result<(), UnbundleError>,
     {
-        self.for_each_frame_with_config(range, &ExtractionConfig::default(), callback)
+        self.for_each_frame_with_options(range, &ExtractOptions::default(), callback)
     }
 
     /// Extract multiple frames with progress reporting and cancellation.
     ///
-    /// Like [`frames`](VideoExtractor::frames) but accepts an
-    /// [`ExtractionConfig`] for progress callbacks and cancellation support.
+    /// Like [`frames`](VideoHandle::frames) but accepts an
+    /// [`ExtractOptions`] for progress callbacks and cancellation support.
     ///
     /// # Errors
     ///
     /// Returns [`UnbundleError::Cancelled`] if cancellation is requested,
-    /// or any error from [`frames`](VideoExtractor::frames).
+    /// or any error from [`frames`](VideoHandle::frames).
     ///
     /// # Example
     ///
     /// ```no_run
     /// use std::sync::Arc;
     ///
-    /// use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler, ProgressCallback, ProgressInfo};
+    /// use unbundle::{ExtractOptions, FrameRange, MediaFile, ProgressCallback, ProgressInfo, UnbundleError};
     ///
     /// struct PrintProgress;
     /// impl ProgressCallback for PrintProgress {
@@ -812,19 +819,19 @@ impl<'a> VideoExtractor<'a> {
     ///     }
     /// }
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let config = ExtractionConfig::new()
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let config = ExtractOptions::new()
     ///     .with_progress(Arc::new(PrintProgress));
-    /// let frames = unbundler.video().frames_with_config(
+    /// let frames = unbundler.video().frames_with_options(
     ///     FrameRange::Range(0, 9),
     ///     &config,
     /// )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn frames_with_config(
+    pub fn frames_with_options(
         &mut self,
         range: FrameRange,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
     ) -> Result<Vec<DynamicImage>, UnbundleError> {
         let video_metadata = self
             .unbundler
@@ -857,8 +864,8 @@ impl<'a> VideoExtractor<'a> {
 
     /// Process frames one at a time with progress reporting and cancellation.
     ///
-    /// Like [`for_each_frame`](VideoExtractor::for_each_frame) but accepts an
-    /// [`ExtractionConfig`].
+    /// Like [`for_each_frame`](VideoHandle::for_each_frame) but accepts an
+    /// [`ExtractOptions`].
     ///
     /// # Errors
     ///
@@ -868,14 +875,14 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{CancellationToken, ExtractionConfig, FrameRange, MediaUnbundler};
+    /// use unbundle::{CancellationToken, ExtractOptions, FrameRange, MediaFile, UnbundleError};
     ///
     /// let token = CancellationToken::new();
-    /// let config = ExtractionConfig::new()
+    /// let config = ExtractOptions::new()
     ///     .with_cancellation(token.clone());
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// unbundler.video().for_each_frame_with_config(
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// unbundler.video().for_each_frame_with_options(
     ///     FrameRange::Range(0, 99),
     ///     &config,
     ///     |frame_number, image| {
@@ -883,12 +890,12 @@ impl<'a> VideoExtractor<'a> {
     ///         Ok(())
     ///     },
     /// )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn for_each_frame_with_config<F>(
+    pub fn for_each_frame_with_options<F>(
         &mut self,
         range: FrameRange,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
         mut callback: F,
     ) -> Result<(), UnbundleError>
     where
@@ -926,7 +933,7 @@ impl<'a> VideoExtractor<'a> {
     /// Uses FFmpeg's `scdet` filter to analyse every frame and return a list
     /// of [`SceneChange`](crate::scene::SceneChange) entries.
     ///
-    /// An optional [`SceneDetectionConfig`](crate::scene::SceneDetectionConfig)
+    /// An optional [`SceneDetectionOptions`](crate::scene::SceneDetectionOptions)
     /// controls the detection threshold. Pass `None` for defaults (threshold
     /// 10.0).
     ///
@@ -939,18 +946,18 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let scenes = unbundler.video().detect_scenes(None)?;
     /// println!("Found {} scene changes", scenes.len());
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    #[cfg(feature = "scene-detection")]
+    #[cfg(feature = "scene")]
     pub fn detect_scenes(
         &mut self,
-        config: Option<crate::scene::SceneDetectionConfig>,
-    ) -> Result<Vec<crate::scene::SceneChange>, UnbundleError> {
+        config: Option<SceneDetectionOptions>,
+    ) -> Result<Vec<SceneChange>, UnbundleError> {
         let video_metadata = self
             .unbundler
             .metadata
@@ -965,14 +972,14 @@ impl<'a> VideoExtractor<'a> {
 
     /// Detect scene changes with cancellation support.
     ///
-    /// Like [`detect_scenes`](VideoExtractor::detect_scenes) but accepts an
-    /// [`ExtractionConfig`] for cancellation.
-    #[cfg(feature = "scene-detection")]
-    pub fn detect_scenes_with_config(
+    /// Like [`detect_scenes`](VideoHandle::detect_scenes) but accepts an
+    /// [`ExtractOptions`] for cancellation.
+    #[cfg(feature = "scene")]
+    pub fn detect_scenes_with_options(
         &mut self,
-        scd_config: Option<crate::scene::SceneDetectionConfig>,
-        config: &ExtractionConfig,
-    ) -> Result<Vec<crate::scene::SceneChange>, UnbundleError> {
+        scd_config: Option<SceneDetectionOptions>,
+        config: &ExtractOptions,
+    ) -> Result<Vec<SceneChange>, UnbundleError> {
         let video_metadata = self
             .unbundler
             .metadata
@@ -995,7 +1002,7 @@ impl<'a> VideoExtractor<'a> {
     /// Export frames as an animated GIF to a file.
     ///
     /// Extracts frames matching the given [`FrameRange`], scales them
-    /// according to [`GifConfig`], and writes the result as an animated
+    /// according to [`GifOptions`], and writes the result as an animated
     /// GIF.
     ///
     /// # Errors
@@ -1008,23 +1015,23 @@ impl<'a> VideoExtractor<'a> {
     ///
     /// ```no_run
     /// use std::time::Duration;
-    /// use unbundle::{FrameRange, MediaUnbundler};
+    /// use unbundle::{FrameRange, GifOptions, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let config = unbundle::GifConfig::new().width(320).frame_delay(10);
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let config = GifOptions::new().width(320).frame_delay(10);
     /// unbundler.video().export_gif(
     ///     "output.gif",
     ///     FrameRange::TimeRange(Duration::from_secs(0), Duration::from_secs(5)),
     ///     &config,
     /// )?;
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     #[cfg(feature = "gif")]
-    pub fn export_gif<P: AsRef<std::path::Path>>(
+    pub fn export_gif<P: AsRef<Path>>(
         &mut self,
         path: P,
         range: FrameRange,
-        gif_config: &crate::gif::GifConfig,
+        gif_config: &GifOptions,
     ) -> Result<(), UnbundleError> {
         let video_metadata = self
             .unbundler
@@ -1035,24 +1042,24 @@ impl<'a> VideoExtractor<'a> {
             .clone();
 
         let foc = gif_config.to_frame_output_config(video_metadata.width, video_metadata.height);
-        let extraction_config = ExtractionConfig::default().with_frame_output(foc);
-        let frames = self.frames_with_config(range, &extraction_config)?;
+        let extraction_config = ExtractOptions::default().with_frame_output(foc);
+        let frames = self.frames_with_options(range, &extraction_config)?;
         crate::gif::encode_gif(path, &frames, gif_config)
     }
 
     /// Export frames as an animated GIF into memory.
     ///
-    /// Like [`export_gif`](VideoExtractor::export_gif) but returns the
+    /// Like [`export_gif`](VideoHandle::export_gif) but returns the
     /// raw GIF bytes instead of writing to a file.
     ///
     /// # Errors
     ///
-    /// Same as [`export_gif`](VideoExtractor::export_gif).
+    /// Same as [`export_gif`](VideoHandle::export_gif).
     #[cfg(feature = "gif")]
     pub fn export_gif_to_memory(
         &mut self,
         range: FrameRange,
-        gif_config: &crate::gif::GifConfig,
+        gif_config: &GifOptions,
     ) -> Result<Vec<u8>, UnbundleError> {
         let video_metadata = self
             .unbundler
@@ -1063,15 +1070,15 @@ impl<'a> VideoExtractor<'a> {
             .clone();
 
         let foc = gif_config.to_frame_output_config(video_metadata.width, video_metadata.height);
-        let extraction_config = ExtractionConfig::default().with_frame_output(foc);
-        let frames = self.frames_with_config(range, &extraction_config)?;
+        let extraction_config = ExtractOptions::default().with_frame_output(foc);
+        let frames = self.frames_with_options(range, &extraction_config)?;
         crate::gif::encode_gif_to_memory(&frames, gif_config)
     }
 
-    /// Analyze the GOP (Group of Pictures) structure of the video stream.
+    /// Analyze the Group of Pictures structure of the video stream.
     ///
     /// Scans all video packets (without decoding) to identify keyframes and
-    /// compute GOP statistics such as average, minimum and maximum GOP size.
+    /// compute Group of Pictures statistics such as average, minimum and maximum sequence size.
     ///
     /// # Errors
     ///
@@ -1080,28 +1087,35 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let gop = unbundler.video().analyze_gops()?;
-    /// println!("Keyframes: {}, Avg GOP: {:.1}", gop.keyframes.len(), gop.average_gop_size);
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let group_of_pictures = unbundler.video().analyze_group_of_pictures()?;
+    /// println!(
+    ///     "Keyframes: {}, Average Group of Pictures: {:.1}",
+    ///     group_of_pictures.keyframes.len(),
+    ///     group_of_pictures.average_group_of_pictures_size
+    /// );
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn analyze_gops(&mut self) -> Result<crate::keyframes::GopInfo, UnbundleError> {
+    pub fn analyze_group_of_pictures(
+        &mut self,
+    ) -> Result<GroupOfPicturesInfo, UnbundleError> {
         let video_stream_index = self.resolve_video_stream_index()?;
-        crate::keyframes::analyze_gops_impl(self.unbundler, video_stream_index)
+        crate::keyframe::analyze_group_of_pictures_impl(self.unbundler, video_stream_index)
     }
 
     /// Return a list of all keyframes in the video stream.
     ///
-    /// This is a convenience wrapper around [`analyze_gops`](VideoExtractor::analyze_gops)
+    /// This is a convenience wrapper around
+    /// [`analyze_group_of_pictures`](VideoHandle::analyze_group_of_pictures)
     /// that returns only the keyframe list.
     ///
     /// # Errors
     ///
-    /// Same as [`analyze_gops`](VideoExtractor::analyze_gops).
-    pub fn keyframes(&mut self) -> Result<Vec<crate::keyframes::KeyframeInfo>, UnbundleError> {
-        Ok(self.analyze_gops()?.keyframes)
+    /// Same as [`analyze_group_of_pictures`](VideoHandle::analyze_group_of_pictures).
+    pub fn keyframes(&mut self) -> Result<Vec<KeyFrameMetadata>, UnbundleError> {
+        Ok(self.analyze_group_of_pictures()?.keyframes)
     }
 
     /// Analyze the video stream for variable frame rate (VFR).
@@ -1117,16 +1131,16 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::MediaUnbundler;
+    /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let vfr = unbundler.video().analyze_vfr()?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let vfr = unbundler.video().analyze_variable_framerate()?;
     /// println!("VFR: {}, mean FPS: {:.2}", vfr.is_vfr, vfr.mean_fps);
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn analyze_vfr(&mut self) -> Result<crate::vfr::VfrAnalysis, UnbundleError> {
+    pub fn analyze_variable_framerate(&mut self) -> Result<VariableFrameRateAnalysis, UnbundleError> {
         let video_stream_index = self.resolve_video_stream_index()?;
-        crate::vfr::analyze_vfr_impl(self.unbundler, video_stream_index)
+        crate::variable_framerate::analyze_variable_framerate_impl(self.unbundler, video_stream_index)
     }
 
     /// Create an async stream of decoded video frames.
@@ -1150,13 +1164,13 @@ impl<'a> VideoExtractor<'a> {
     /// ```no_run
     /// use tokio_stream::StreamExt;
     ///
-    /// use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler};
+    /// use unbundle::{ExtractOptions, FrameRange, MediaFile, UnbundleError};
     ///
-    /// # async fn example() -> Result<(), unbundle::UnbundleError> {
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// # async fn example() -> Result<(), UnbundleError> {
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let mut stream = unbundler
     ///     .video()
-    ///     .frame_stream(FrameRange::Range(0, 9), ExtractionConfig::new())?;
+    ///     .frame_stream(FrameRange::Range(0, 9), ExtractOptions::new())?;
     ///
     /// while let Some(result) = stream.next().await {
     ///     let (frame_number, image) = result?;
@@ -1165,11 +1179,11 @@ impl<'a> VideoExtractor<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(feature = "async-tokio")]
+    #[cfg(feature = "async")]
     pub fn frame_stream(
         &mut self,
         range: FrameRange,
-        config: ExtractionConfig,
+        config: ExtractOptions,
     ) -> Result<FrameStream, UnbundleError> {
         // Validate eagerly: ensure the file has a video stream.
         let _video_metadata = self
@@ -1187,13 +1201,13 @@ impl<'a> VideoExtractor<'a> {
 
     /// Create a lazy iterator over decoded video frames.
     ///
-    /// Unlike [`frames`](VideoExtractor::frames), which decodes everything
+    /// Unlike [`frames`](VideoHandle::frames), which decodes everything
     /// up-front, this returns a [`FrameIterator`]
     /// that decodes one frame at a time on each [`next()`](Iterator::next)
     /// call. This is ideal when you want to stop early or process frames
     /// one by one without buffering the entire set.
     ///
-    /// The iterator borrows the underlying [`MediaUnbundler`] mutably and
+    /// The iterator borrows the underlying [`MediaFile`] mutably and
     /// releases it when dropped.
     ///
     /// # Errors
@@ -1204,16 +1218,16 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{FrameRange, MediaUnbundler};
+    /// use unbundle::{FrameRange, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
     /// let iter = unbundler.video().frame_iter(FrameRange::Range(0, 9))?;
     ///
     /// for result in iter {
     ///     let (frame_number, image) = result?;
     ///     image.save(format!("frame_{frame_number}.png"))?;
     /// }
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn frame_iter(
         self,
@@ -1228,23 +1242,23 @@ impl<'a> VideoExtractor<'a> {
             .clone();
 
         let frame_numbers = self.resolve_frame_numbers_for_iter(range, &video_metadata)?;
-        let output_config = FrameOutputConfig::default();
+        let output_config = FrameOutputOptions::default();
 
         FrameIterator::new(self.unbundler, frame_numbers, output_config, self.stream_index)
     }
 
     /// Create a lazy iterator with custom output configuration.
     ///
-    /// Like [`frame_iter`](VideoExtractor::frame_iter) but uses the given
-    /// [`FrameOutputConfig`] for pixel format and resolution settings.
+    /// Like [`frame_iter`](VideoHandle::frame_iter) but uses the given
+    /// [`FrameOutputOptions`] for pixel format and resolution settings.
     ///
     /// # Errors
     ///
-    /// Returns errors from [`frame_iter`](VideoExtractor::frame_iter).
-    pub fn frame_iter_with_config(
+    /// Returns errors from [`frame_iter`](VideoHandle::frame_iter).
+    pub fn frame_iter_with_options(
         self,
         range: FrameRange,
-        output_config: FrameOutputConfig,
+        output_config: FrameOutputOptions,
     ) -> Result<FrameIterator<'a>, UnbundleError> {
         let video_metadata = self
             .unbundler
@@ -1260,7 +1274,7 @@ impl<'a> VideoExtractor<'a> {
 
     /// Resolve a [`FrameRange`] into sorted, deduplicated frame numbers.
     ///
-    /// Shared helper for [`frame_iter`](VideoExtractor::frame_iter) and
+    /// Shared helper for [`frame_iter`](VideoHandle::frame_iter) and
     /// related methods.
     fn resolve_frame_numbers_for_iter(
         &self,
@@ -1292,11 +1306,11 @@ impl<'a> VideoExtractor<'a> {
                         end: format!("{end_time:?}"),
                     });
                 }
-                let start_frame = crate::utilities::timestamp_to_frame_number(
+                let start_frame = crate::conversion::timestamp_to_frame_number(
                     start_time,
                     video_metadata.frames_per_second,
                 );
-                let end_frame = crate::utilities::timestamp_to_frame_number(
+                let end_frame = crate::conversion::timestamp_to_frame_number(
                     end_time,
                     video_metadata.frames_per_second,
                 );
@@ -1310,7 +1324,7 @@ impl<'a> VideoExtractor<'a> {
                 let mut nums = Vec::new();
                 let mut current = Duration::ZERO;
                 while current <= total_duration {
-                    nums.push(crate::utilities::timestamp_to_frame_number(
+                    nums.push(crate::conversion::timestamp_to_frame_number(
                         current,
                         video_metadata.frames_per_second,
                     ));
@@ -1342,11 +1356,11 @@ impl<'a> VideoExtractor<'a> {
                     end: format!("{end:?}"),
                 });
             }
-            let start_frame = crate::utilities::timestamp_to_frame_number(
+            let start_frame = crate::conversion::timestamp_to_frame_number(
                 *start,
                 video_metadata.frames_per_second,
             );
-            let end_frame = crate::utilities::timestamp_to_frame_number(
+            let end_frame = crate::conversion::timestamp_to_frame_number(
                 *end,
                 video_metadata.frames_per_second,
             );
@@ -1375,21 +1389,21 @@ impl<'a> VideoExtractor<'a> {
     /// # Example
     ///
     /// ```no_run
-    /// use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler};
+    /// use unbundle::{ExtractOptions, FrameRange, MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-    /// let config = ExtractionConfig::new();
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let config = ExtractOptions::new();
     /// let frames = unbundler
     ///     .video()
     ///     .frames_parallel(FrameRange::Interval(100), &config)?;
     /// println!("Got {} frames", frames.len());
-    /// # Ok::<(), unbundle::UnbundleError>(())
+    /// # Ok::<(), UnbundleError>(())
     /// ```
-    #[cfg(feature = "parallel")]
+    #[cfg(feature = "rayon")]
     pub fn frames_parallel(
         &mut self,
         range: FrameRange,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
     ) -> Result<Vec<DynamicImage>, UnbundleError> {
         let video_metadata = self
             .unbundler
@@ -1402,7 +1416,7 @@ impl<'a> VideoExtractor<'a> {
         // Resolve the range into concrete frame numbers.
         let frame_numbers = self.resolve_frame_numbers_for_iter(range, &video_metadata)?;
 
-        let results = crate::parallel::parallel_extract_frames(
+        let results = crate::rayon::parallel_extract_frames(
             &self.unbundler.file_path,
             &frame_numbers,
             &video_metadata,
@@ -1435,9 +1449,9 @@ impl<'a> VideoExtractor<'a> {
             FrameRange::TimeRange(start_time, end_time) => {
                 let fps = video_metadata.frames_per_second;
                 let start_frame =
-                    crate::utilities::timestamp_to_frame_number(*start_time, fps);
+                    crate::conversion::timestamp_to_frame_number(*start_time, fps);
                 let end_frame =
-                    crate::utilities::timestamp_to_frame_number(*end_time, fps);
+                    crate::conversion::timestamp_to_frame_number(*end_time, fps);
                 Some(end_frame.saturating_sub(start_frame) + 1)
             }
             FrameRange::TimeInterval(interval) => {
@@ -1452,8 +1466,8 @@ impl<'a> VideoExtractor<'a> {
             FrameRange::Segments(segments) => {
                 let fps = video_metadata.frames_per_second;
                 let total: u64 = segments.iter().map(|(start, end)| {
-                    let sf = crate::utilities::timestamp_to_frame_number(*start, fps);
-                    let ef = crate::utilities::timestamp_to_frame_number(*end, fps);
+                    let sf = crate::conversion::timestamp_to_frame_number(*start, fps);
+                    let ef = crate::conversion::timestamp_to_frame_number(*end, fps);
                     ef.saturating_sub(sf) + 1
                 }).sum();
                 Some(total)
@@ -1467,7 +1481,7 @@ impl<'a> VideoExtractor<'a> {
         &mut self,
         range: FrameRange,
         video_metadata: &VideoMetadata,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
         handler: &mut F,
     ) -> Result<(), UnbundleError>
     where
@@ -1498,11 +1512,11 @@ impl<'a> VideoExtractor<'a> {
                         end: format!("{end_time:?}"),
                     });
                 }
-                let start_frame = crate::utilities::timestamp_to_frame_number(
+                let start_frame = crate::conversion::timestamp_to_frame_number(
                     start_time,
                     video_metadata.frames_per_second,
                 );
-                let end_frame = crate::utilities::timestamp_to_frame_number(
+                let end_frame = crate::conversion::timestamp_to_frame_number(
                     end_time,
                     video_metadata.frames_per_second,
                 );
@@ -1516,7 +1530,7 @@ impl<'a> VideoExtractor<'a> {
                 let mut numbers = Vec::new();
                 let mut current = Duration::ZERO;
                 while current <= total_duration {
-                    numbers.push(crate::utilities::timestamp_to_frame_number(
+                    numbers.push(crate::conversion::timestamp_to_frame_number(
                         current,
                         video_metadata.frames_per_second,
                     ));
@@ -1534,17 +1548,17 @@ impl<'a> VideoExtractor<'a> {
         }
     }
 
-    /// Validate and dispatch a [`FrameRange`], passing [`FrameInfo`]
+    /// Validate and dispatch a [`FrameRange`], passing [`FrameMetadata`]
     /// alongside each decoded image.
     fn dispatch_range_with_info<F>(
         &mut self,
         range: FrameRange,
         video_metadata: &VideoMetadata,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
         handler: &mut F,
     ) -> Result<(), UnbundleError>
     where
-        F: FnMut(u64, DynamicImage, FrameInfo) -> Result<(), UnbundleError>,
+        F: FnMut(u64, DynamicImage, FrameMetadata) -> Result<(), UnbundleError>,
     {
         match range {
             FrameRange::Range(start, end) => {
@@ -1562,7 +1576,7 @@ impl<'a> VideoExtractor<'a> {
                 }
                 let total = video_metadata.frame_count;
                 let numbers: Vec<u64> = (0..total).step_by(step as usize).collect();
-                self.process_specific_frames_with_info(
+                self.process_specific_frames_and_metadata(
                     &numbers,
                     video_metadata,
                     config,
@@ -1576,11 +1590,11 @@ impl<'a> VideoExtractor<'a> {
                         end: format!("{end_time:?}"),
                     });
                 }
-                let start_frame = crate::utilities::timestamp_to_frame_number(
+                let start_frame = crate::conversion::timestamp_to_frame_number(
                     start_time,
                     video_metadata.frames_per_second,
                 );
-                let end_frame = crate::utilities::timestamp_to_frame_number(
+                let end_frame = crate::conversion::timestamp_to_frame_number(
                     end_time,
                     video_metadata.frames_per_second,
                 );
@@ -1600,13 +1614,13 @@ impl<'a> VideoExtractor<'a> {
                 let mut numbers = Vec::new();
                 let mut current = Duration::ZERO;
                 while current <= total_duration {
-                    numbers.push(crate::utilities::timestamp_to_frame_number(
+                    numbers.push(crate::conversion::timestamp_to_frame_number(
                         current,
                         video_metadata.frames_per_second,
                     ));
                     current += interval;
                 }
-                self.process_specific_frames_with_info(
+                self.process_specific_frames_and_metadata(
                     &numbers,
                     video_metadata,
                     config,
@@ -1614,7 +1628,7 @@ impl<'a> VideoExtractor<'a> {
                 )
             }
             FrameRange::Specific(numbers) => {
-                self.process_specific_frames_with_info(
+                self.process_specific_frames_and_metadata(
                     &numbers,
                     video_metadata,
                     config,
@@ -1623,7 +1637,7 @@ impl<'a> VideoExtractor<'a> {
             }
             FrameRange::Segments(segments) => {
                 let numbers = Self::resolve_segments(&segments, video_metadata)?;
-                self.process_specific_frames_with_info(
+                self.process_specific_frames_and_metadata(
                     &numbers,
                     video_metadata,
                     config,
@@ -1634,17 +1648,17 @@ impl<'a> VideoExtractor<'a> {
     }
 
     /// Decode a contiguous range of frames, calling the handler with
-    /// [`FrameInfo`] for each.
+    /// [`FrameMetadata`] for each.
     fn process_frame_range_with_info<F>(
         &mut self,
         start: u64,
         end: u64,
         video_metadata: &VideoMetadata,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
         handler: &mut F,
     ) -> Result<(), UnbundleError>
     where
-        F: FnMut(u64, DynamicImage, FrameInfo) -> Result<(), UnbundleError>,
+        F: FnMut(u64, DynamicImage, FrameMetadata) -> Result<(), UnbundleError>,
     {
         let video_stream_index = self.resolve_video_stream_index()?;
 
@@ -1679,7 +1693,7 @@ impl<'a> VideoExtractor<'a> {
         };
 
         let start_timestamp =
-            crate::utilities::frame_number_to_stream_timestamp(start, frames_per_second, time_base);
+            crate::conversion::frame_number_to_stream_timestamp(start, frames_per_second, time_base);
         self.unbundler
             .input_context
             .seek(start_timestamp, ..start_timestamp)?;
@@ -1700,7 +1714,7 @@ impl<'a> VideoExtractor<'a> {
             while decoder.receive_frame(&mut decoded_frame).is_ok() {
                 let pts = decoded_frame.pts().unwrap_or(0);
                 let current_frame_number =
-                    crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 if current_frame_number >= start && current_frame_number <= end {
                     let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
@@ -1732,7 +1746,7 @@ impl<'a> VideoExtractor<'a> {
             }
             let pts = decoded_frame.pts().unwrap_or(0);
             let current_frame_number =
-                crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
             if current_frame_number >= start && current_frame_number <= end {
                 let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
@@ -1760,16 +1774,16 @@ impl<'a> VideoExtractor<'a> {
     }
 
     /// Process frames at specific (possibly non-contiguous) frame numbers,
-    /// passing [`FrameInfo`] alongside each decoded image.
-    fn process_specific_frames_with_info<F>(
+    /// passing [`FrameMetadata`] alongside each decoded image.
+    fn process_specific_frames_and_metadata<F>(
         &mut self,
         frame_numbers: &[u64],
         video_metadata: &VideoMetadata,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
         handler: &mut F,
     ) -> Result<(), UnbundleError>
     where
-        F: FnMut(u64, DynamicImage, FrameInfo) -> Result<(), UnbundleError>,
+        F: FnMut(u64, DynamicImage, FrameMetadata) -> Result<(), UnbundleError>,
     {
         if frame_numbers.is_empty() {
             return Ok(());
@@ -1811,7 +1825,7 @@ impl<'a> VideoExtractor<'a> {
             )?)
         };
 
-        let first_timestamp = crate::utilities::frame_number_to_stream_timestamp(
+        let first_timestamp = crate::conversion::frame_number_to_stream_timestamp(
             sorted_numbers[0],
             frames_per_second,
             time_base,
@@ -1844,7 +1858,7 @@ impl<'a> VideoExtractor<'a> {
 
                 let pts = decoded_frame.pts().unwrap_or(0);
                 let current_frame_number =
-                    crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 while target_index < sorted_numbers.len()
                     && sorted_numbers[target_index] < current_frame_number
@@ -1890,7 +1904,7 @@ impl<'a> VideoExtractor<'a> {
 
                 let pts = decoded_frame.pts().unwrap_or(0);
                 let current_frame_number =
-                    crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 while target_index < sorted_numbers.len()
                     && sorted_numbers[target_index] < current_frame_number
@@ -1933,7 +1947,7 @@ impl<'a> VideoExtractor<'a> {
         start: u64,
         end: u64,
         video_metadata: &VideoMetadata,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
         handler: &mut F,
     ) -> Result<(), UnbundleError>
     where
@@ -1976,7 +1990,7 @@ impl<'a> VideoExtractor<'a> {
 
         // Seek to start frame.
         let start_timestamp =
-            crate::utilities::frame_number_to_stream_timestamp(start, frames_per_second, time_base);
+            crate::conversion::frame_number_to_stream_timestamp(start, frames_per_second, time_base);
         self.unbundler
             .input_context
             .seek(start_timestamp, ..start_timestamp)?;
@@ -1998,7 +2012,7 @@ impl<'a> VideoExtractor<'a> {
             while decoder.receive_frame(&mut decoded_frame).is_ok() {
                 let pts = decoded_frame.pts().unwrap_or(0);
                 let current_frame_number =
-                    crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 if current_frame_number >= start && current_frame_number <= end {
                     let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
@@ -2031,7 +2045,7 @@ impl<'a> VideoExtractor<'a> {
 
             let pts = decoded_frame.pts().unwrap_or(0);
             let current_frame_number =
-                crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
             if current_frame_number >= start && current_frame_number <= end {
                 let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
@@ -2065,7 +2079,7 @@ impl<'a> VideoExtractor<'a> {
         &mut self,
         frame_numbers: &[u64],
         video_metadata: &VideoMetadata,
-        config: &ExtractionConfig,
+        config: &ExtractOptions,
         handler: &mut F,
     ) -> Result<(), UnbundleError>
     where
@@ -2114,7 +2128,7 @@ impl<'a> VideoExtractor<'a> {
         };
 
         // Seek to the first requested frame.
-        let first_timestamp = crate::utilities::frame_number_to_stream_timestamp(
+        let first_timestamp = crate::conversion::frame_number_to_stream_timestamp(
             sorted_numbers[0],
             frames_per_second,
             time_base,
@@ -2147,7 +2161,7 @@ impl<'a> VideoExtractor<'a> {
 
                 let pts = decoded_frame.pts().unwrap_or(0);
                 let current_frame_number =
-                    crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 // Skip target numbers that are before the current position
                 // (can happen after a seek lands past the target).
@@ -2192,7 +2206,7 @@ impl<'a> VideoExtractor<'a> {
 
                 let pts = decoded_frame.pts().unwrap_or(0);
                 let current_frame_number =
-                    crate::utilities::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 while target_index < sorted_numbers.len()
                     && sorted_numbers[target_index] < current_frame_number
@@ -2231,14 +2245,14 @@ impl<'a> VideoExtractor<'a> {
 /// hardware decoding was successfully initialised.
 fn create_video_decoder(
     codec_context: CodecContext,
-    #[allow(unused_variables)] config: &ExtractionConfig,
+    #[allow(unused_variables)] config: &ExtractOptions,
 ) -> Result<(VideoDecoder, bool), UnbundleError> {
-    #[cfg(feature = "hw-accel")]
+    #[cfg(feature = "hardware")]
     {
-        let setup = crate::hw_accel::try_create_hw_decoder(codec_context, config.hw_accel)?;
+        let setup = crate::hardware_acceleration::try_create_hw_decoder(codec_context, config.hardware_acceleration)?;
         Ok((setup.decoder, setup.hw_active))
     }
-    #[cfg(not(feature = "hw-accel"))]
+    #[cfg(not(feature = "hardware"))]
     {
         let decoder = codec_context.decoder().video()?;
         Ok((decoder, false))
@@ -2252,9 +2266,9 @@ fn maybe_transfer_hw_frame(
     #[allow(unused_variables)] frame: &VideoFrame,
     #[allow(unused_variables)] hw_active: bool,
 ) -> Result<Option<VideoFrame>, UnbundleError> {
-    #[cfg(feature = "hw-accel")]
+    #[cfg(feature = "hardware")]
     if hw_active {
-        match crate::hw_accel::transfer_hw_frame(frame) {
+        match crate::hardware_acceleration::transfer_hw_frame(frame) {
             Ok(sw_frame) => return Ok(Some(sw_frame)),
             Err(_) => return Ok(None), // frame already in system memory
         }
@@ -2291,16 +2305,16 @@ fn ensure_scaler(
 /// Convert a scaled video frame to an [`image::DynamicImage`].
 ///
 /// Supports RGB24, RGBA, and GRAY8 output depending on the
-/// [`FrameOutputConfig`].
+/// [`FrameOutputOptions`].
 fn convert_frame_to_image(
     frame: &VideoFrame,
     width: u32,
     height: u32,
-    output_config: &FrameOutputConfig,
+    output_config: &FrameOutputOptions,
 ) -> Result<DynamicImage, UnbundleError> {
     match output_config.pixel_format {
         PixelFormat::Rgb8 => {
-            let buffer = crate::utilities::frame_to_buffer(frame, width, height, 3);
+            let buffer = crate::conversion::frame_to_buffer(frame, width, height, 3);
             let rgb_image = RgbImage::from_raw(width, height, buffer).ok_or_else(|| {
                 UnbundleError::VideoDecodeError(
                     "Failed to construct RGB image from decoded frame data".to_string(),
@@ -2309,7 +2323,7 @@ fn convert_frame_to_image(
             Ok(DynamicImage::ImageRgb8(rgb_image))
         }
         PixelFormat::Rgba8 => {
-            let buffer = crate::utilities::frame_to_buffer(frame, width, height, 4);
+            let buffer = crate::conversion::frame_to_buffer(frame, width, height, 4);
             let rgba_image = RgbaImage::from_raw(width, height, buffer).ok_or_else(|| {
                 UnbundleError::VideoDecodeError(
                     "Failed to construct RGBA image from decoded frame data".to_string(),
@@ -2318,7 +2332,7 @@ fn convert_frame_to_image(
             Ok(DynamicImage::ImageRgba8(rgba_image))
         }
         PixelFormat::Gray8 => {
-            let buffer = crate::utilities::frame_to_buffer(frame, width, height, 1);
+            let buffer = crate::conversion::frame_to_buffer(frame, width, height, 1);
             let gray_image = GrayImage::from_raw(width, height, buffer).ok_or_else(|| {
                 UnbundleError::VideoDecodeError(
                     "Failed to construct grayscale image from decoded frame data".to_string(),
@@ -2329,20 +2343,20 @@ fn convert_frame_to_image(
     }
 }
 
-/// Build a [`FrameInfo`] from a decoded video frame.
+/// Build a [`FrameMetadata`] from a decoded video frame.
 fn build_frame_info(
     frame: &VideoFrame,
     frame_number: u64,
-    time_base: ffmpeg_next::Rational,
-) -> FrameInfo {
+    time_base: Rational,
+) -> FrameMetadata {
     let pts = frame.pts();
-    let timestamp_seconds = crate::utilities::pts_to_seconds(
+    let timestamp_seconds = crate::conversion::pts_to_seconds(
         pts.unwrap_or(0),
         time_base,
     );
     let timestamp = Duration::from_secs_f64(timestamp_seconds.max(0.0));
 
-    FrameInfo {
+    FrameMetadata {
         frame_number,
         timestamp,
         pts,

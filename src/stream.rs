@@ -14,11 +14,11 @@
 //! ```no_run
 //! use tokio_stream::StreamExt;
 //!
-//! use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler};
+//! use unbundle::{ExtractOptions, FrameRange, MediaFile, UnbundleError};
 //!
-//! # async fn example() -> Result<(), unbundle::UnbundleError> {
-//! let mut unbundler = MediaUnbundler::open("input.mp4")?;
-//! let config = ExtractionConfig::new();
+//! # async fn example() -> Result<(), UnbundleError> {
+//! let mut unbundler = MediaFile::open("input.mp4")?;
+//! let config = ExtractOptions::new();
 //! let mut stream = unbundler
 //!     .video()
 //!     .frame_stream(FrameRange::Range(0, 9), config)?;
@@ -43,9 +43,9 @@ use tokio::task::JoinHandle;
 use tokio_stream::Stream;
 
 use crate::audio::AudioFormat;
-use crate::config::ExtractionConfig;
+use crate::configuration::ExtractOptions;
 use crate::error::UnbundleError;
-use crate::unbundler::MediaUnbundler;
+use crate::unbundle::MediaFile;
 use crate::video::FrameRange;
 
 /// Default bounded-channel capacity for [`FrameStream`].
@@ -69,13 +69,13 @@ const DEFAULT_CHANNEL_CAPACITY: usize = 8;
 /// ```no_run
 /// use tokio_stream::StreamExt;
 ///
-/// use unbundle::{ExtractionConfig, FrameRange, MediaUnbundler};
+/// use unbundle::{ExtractOptions, FrameRange, MediaFile, UnbundleError};
 ///
-/// # async fn example() -> Result<(), unbundle::UnbundleError> {
-/// let mut unbundler = MediaUnbundler::open("input.mp4")?;
+/// # async fn example() -> Result<(), UnbundleError> {
+/// let mut unbundler = MediaFile::open("input.mp4")?;
 /// let mut stream = unbundler
 ///     .video()
-///     .frame_stream(FrameRange::Interval(30), ExtractionConfig::new())?;
+///     .frame_stream(FrameRange::Interval(30), ExtractOptions::new())?;
 ///
 /// while let Some(result) = stream.next().await {
 ///     let (frame_number, image) = result?;
@@ -112,7 +112,7 @@ impl Stream for FrameStream {
 pub(crate) fn create_frame_stream(
     file_path: PathBuf,
     range: FrameRange,
-    config: ExtractionConfig,
+    config: ExtractOptions,
     channel_capacity: Option<usize>,
 ) -> FrameStream {
     let capacity = channel_capacity.unwrap_or(DEFAULT_CHANNEL_CAPACITY).max(1);
@@ -136,14 +136,14 @@ pub(crate) fn create_frame_stream(
 fn decode_frames_blocking(
     file_path: &Path,
     range: FrameRange,
-    config: &ExtractionConfig,
+    config: &ExtractOptions,
     sender: &Sender<Result<(u64, DynamicImage), UnbundleError>>,
 ) -> Result<(), UnbundleError> {
-    let mut unbundler = MediaUnbundler::open(file_path)?;
+    let mut unbundler = MediaFile::open(file_path)?;
 
     unbundler
         .video()
-        .for_each_frame_with_config(range, config, |frame_number, image| {
+        .for_each_frame_with_options(range, config, |frame_number, image| {
             sender
                 .blocking_send(Ok((frame_number, image)))
                 .map_err(|_| UnbundleError::Cancelled)
@@ -152,18 +152,18 @@ fn decode_frames_blocking(
 
 /// A future that resolves to extracted audio data.
 ///
-/// Created via [`AudioExtractor::extract_async`](crate::AudioExtractor) or
+/// Created via [`AudioHandle::extract_async`](crate::AudioHandle) or
 /// similar async audio methods. The actual transcoding runs on a blocking
 /// thread; polling this future drives it to completion.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use unbundle::{AudioFormat, ExtractionConfig, MediaUnbundler};
+/// use unbundle::{AudioFormat, ExtractOptions, MediaFile, UnbundleError};
 ///
-/// # async fn example() -> Result<(), unbundle::UnbundleError> {
-/// let mut unbundler = MediaUnbundler::open("input.mp4")?;
-/// let config = ExtractionConfig::new();
+/// # async fn example() -> Result<(), UnbundleError> {
+/// let mut unbundler = MediaFile::open("input.mp4")?;
+/// let config = ExtractOptions::new();
 /// let audio_bytes = unbundler
 ///     .audio()
 ///     .extract_async(AudioFormat::Wav, config)?
@@ -195,10 +195,10 @@ pub(crate) fn create_audio_future(
     format: AudioFormat,
     track_index: Option<usize>,
     range: Option<(Duration, Duration)>,
-    config: ExtractionConfig,
+    config: ExtractOptions,
 ) -> AudioFuture {
     let handle = tokio::task::spawn_blocking(move || {
-        let mut unbundler = MediaUnbundler::open(&file_path)?;
+        let mut unbundler = MediaFile::open(&file_path)?;
 
         let mut extractor = if let Some(idx) = track_index {
             unbundler.audio_track(idx)?
@@ -208,9 +208,9 @@ pub(crate) fn create_audio_future(
 
         match range {
             Some((start, end)) => {
-                extractor.extract_range_with_config(start, end, format, &config)
+                extractor.extract_range_with_options(start, end, format, &config)
             }
-            None => extractor.extract_with_config(format, &config),
+            None => extractor.extract_with_options(format, &config),
         }
     });
 

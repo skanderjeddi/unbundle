@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use unbundle::{FrameRange, MediaUnbundler, UnbundleError};
+use unbundle::{FrameRange, MediaFile, UnbundleError};
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -20,7 +20,7 @@ fn segments_extracts_from_multiple_ranges() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let frames = unbundler
         .video()
         .frames(FrameRange::Segments(vec![
@@ -41,7 +41,7 @@ fn segments_invalid_range_returns_error() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let result = unbundler.video().frames(FrameRange::Segments(vec![
         // Invalid: start > end
         (Duration::from_secs(5), Duration::from_secs(2)),
@@ -61,7 +61,7 @@ fn segments_empty_produces_no_frames() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let frames = unbundler
         .video()
         .frames(FrameRange::Segments(vec![]))
@@ -78,7 +78,7 @@ fn segments_combined_frame_count() {
         return;
     }
 
-    let mut unbundler = MediaUnbundler::open(path).expect("Failed to open");
+    let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let fps = unbundler.metadata().video.as_ref().unwrap().frames_per_second;
 
     // Each 500ms segment at 30fps should produce ~15 frames.

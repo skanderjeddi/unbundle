@@ -10,13 +10,13 @@
 //! # Example
 //!
 //! ```no_run
-//! use unbundle::{AudioFormat, MediaUnbundler, Transcoder};
+//! use unbundle::{AudioFormat, MediaFile, Transcoder, UnbundleError};
 //!
-//! let mut unbundler = MediaUnbundler::open("input.mp4")?;
+//! let mut unbundler = MediaFile::open("input.mp4")?;
 //! Transcoder::new(&mut unbundler)
 //!     .format(AudioFormat::Mp3)
 //!     .run("output.mp3")?;
-//! # Ok::<(), unbundle::UnbundleError>(())
+//! # Ok::<(), UnbundleError>(())
 //! ```
 
 use std::path::Path;
@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use crate::audio::AudioFormat;
 use crate::error::UnbundleError;
-use crate::unbundler::MediaUnbundler;
+use crate::unbundle::MediaFile;
 
 /// Builder for audio transcoding operations.
 ///
@@ -32,7 +32,7 @@ use crate::unbundler::MediaUnbundler;
 /// bitrate, and optional time range, then call [`run`](Transcoder::run)
 /// to produce the output file.
 pub struct Transcoder<'a> {
-    unbundler: &'a mut MediaUnbundler,
+    unbundler: &'a mut MediaFile,
     format: AudioFormat,
     start: Option<Duration>,
     end: Option<Duration>,
@@ -43,7 +43,7 @@ impl<'a> Transcoder<'a> {
     /// Create a new transcoder for the given unbundler.
     ///
     /// The default output format is WAV.
-    pub fn new(unbundler: &'a mut MediaUnbundler) -> Self {
+    pub fn new(unbundler: &'a mut MediaFile) -> Self {
         Self {
             unbundler,
             format: AudioFormat::Wav,
@@ -80,7 +80,7 @@ impl<'a> Transcoder<'a> {
 
     /// Run the transcode and write the output to `path`.
     ///
-    /// This delegates to `AudioExtractor::save_range` (or `save`) under
+    /// This delegates to `AudioHandle::save_range` (or `save`) under
     /// the hood: the audio is decoded and re-encoded to the target format.
     ///
     /// # Errors

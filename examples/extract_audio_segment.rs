@@ -6,7 +6,7 @@
 use std::error::Error;
 use std::time::Duration;
 
-use unbundle::{AudioFormat, MediaUnbundler};
+use unbundle::{AudioFormat, MediaFile};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let end = Duration::from_secs_f64(end_seconds);
 
     println!("Opening {input_path}...");
-    let mut unbundler = MediaUnbundler::open(&input_path)?;
+    let mut unbundler = MediaFile::open(&input_path)?;
 
     let metadata = unbundler.metadata();
     println!("Media duration: {:?}", metadata.duration);
