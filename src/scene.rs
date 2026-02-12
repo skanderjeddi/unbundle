@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use ffmpeg_next::{
     codec::context::Context as CodecContext, filter::Graph as FilterGraph,
+    Error as FfmpegError, Packet,
     frame::Video as VideoFrame,
 };
 use ffmpeg_sys_next::AVPixelFormat;
@@ -46,6 +47,23 @@ pub struct SceneChange {
     pub score: f64,
 }
 
+/// Strategy used for scene detection.
+///
+/// `Full` uses FFmpeg's `scdet` filter and decodes frames.
+/// `Keyframes` uses packet-level keyframes as scene boundaries (very fast).
+/// `Auto` chooses a strategy based on stream size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SceneDetectionMode {
+    /// Choose automatically: prefer keyframe-based detection on long videos,
+    /// otherwise run full `scdet` analysis.
+    #[default]
+    Auto,
+    /// Full decode + `scdet` filter.
+    Full,
+    /// Fast packet-level keyframe boundary detection.
+    Keyframes,
+}
+
 /// Scene detection settings.
 ///
 /// Controls the sensitivity of the scene-change detector. The default
@@ -57,6 +75,8 @@ pub struct SceneDetectionOptions {
     /// Range 0.0–100.0. Lower values detect more (weaker) cuts; higher
     /// values only detect obvious hard cuts. Default: 10.0.
     pub threshold: f64,
+    /// Scene detection strategy.
+    pub mode: SceneDetectionMode,
     /// Optional maximum analysis duration from the start of the stream.
     ///
     /// When set, scene detection stops once decoded frame timestamps exceed
@@ -74,6 +94,7 @@ impl Default for SceneDetectionOptions {
     fn default() -> Self {
         Self {
             threshold: 10.0,
+            mode: SceneDetectionMode::Auto,
             max_duration: None,
             max_scene_changes: None,
         }
@@ -89,6 +110,12 @@ impl SceneDetectionOptions {
     /// Set the minimum score required for scene changes.
     pub fn threshold(mut self, threshold: f64) -> Self {
         self.threshold = threshold;
+        self
+    }
+
+    /// Set the scene detection strategy.
+    pub fn mode(mut self, mode: SceneDetectionMode) -> Self {
+        self.mode = mode;
         self
     }
 
@@ -116,6 +143,29 @@ pub(crate) fn detect_scenes_impl(
     cancel_check: Option<&dyn Fn() -> bool>,
     stream_index: Option<usize>,
 ) -> Result<Vec<SceneChange>, UnbundleError> {
+    let selected_mode = match config.mode {
+        SceneDetectionMode::Auto => {
+            // On long videos, packet-level keyframe analysis is dramatically
+            // faster and usually sufficient for sampling or chapter-like splits.
+            if video_metadata.frame_count > 6_000 && config.max_duration.is_none() {
+                SceneDetectionMode::Keyframes
+            } else {
+                SceneDetectionMode::Full
+            }
+        }
+        mode => mode,
+    };
+
+    if selected_mode == SceneDetectionMode::Keyframes {
+        return detect_scenes_from_keyframes(
+            unbundler,
+            video_metadata,
+            config,
+            cancel_check,
+            stream_index,
+        );
+    }
+
     let video_stream_index = stream_index
         .or(unbundler.video_stream_index)
         .ok_or(UnbundleError::NoVideoStream)?;
@@ -367,6 +417,100 @@ pub(crate) fn detect_scenes_impl(
             {
                 break;
             }
+        }
+    }
+
+    Ok(scenes)
+}
+
+/// Fast scene boundary detection using packet keyframes only.
+///
+/// This avoids full-frame decode and is suitable for long videos where
+/// approximate boundaries are acceptable.
+fn detect_scenes_from_keyframes(
+    unbundler: &mut MediaFile,
+    video_metadata: &VideoMetadata,
+    config: &SceneDetectionOptions,
+    cancel_check: Option<&dyn Fn() -> bool>,
+    stream_index: Option<usize>,
+) -> Result<Vec<SceneChange>, UnbundleError> {
+    let video_stream_index = stream_index
+        .or(unbundler.video_stream_index)
+        .ok_or(UnbundleError::NoVideoStream)?;
+
+    log::debug!(
+        "Detecting scenes from keyframes (stream={}, max_duration={:?}, max_scene_changes={:?})",
+        video_stream_index,
+        config.max_duration,
+        config.max_scene_changes,
+    );
+
+    let time_base = unbundler
+        .input_context
+        .stream(video_stream_index)
+        .ok_or(UnbundleError::NoVideoStream)?
+        .time_base();
+
+    let max_stream_timestamp = config
+        .max_duration
+        .map(|duration| crate::conversion::duration_to_stream_timestamp(duration, time_base));
+
+    let mut scenes = Vec::new();
+    let mut video_packet_number: u64 = 0;
+    let mut packet = Packet::empty();
+
+    loop {
+        if let Some(check) = cancel_check
+            && check()
+        {
+            return Err(UnbundleError::Cancelled);
+        }
+
+        match packet.read(&mut unbundler.input_context) {
+            Ok(()) => {
+                if packet.stream() as usize != video_stream_index {
+                    continue;
+                }
+
+                if let Some(max_pts) = max_stream_timestamp
+                    && packet.pts().is_some_and(|pts| pts > max_pts)
+                {
+                    break;
+                }
+
+                if packet.is_key() {
+                    // Skip the very first key packet (start-of-stream marker).
+                    if video_packet_number > 0 {
+                        let pts = packet.pts().unwrap_or(0);
+                        let timestamp = Duration::from_secs_f64(
+                            crate::conversion::pts_to_seconds(pts, time_base).max(0.0),
+                        );
+                        let frame_number = crate::conversion::pts_to_frame_number(
+                            pts,
+                            time_base,
+                            video_metadata.frames_per_second,
+                        );
+
+                        scenes.push(SceneChange {
+                            timestamp,
+                            frame_number,
+                            // Sentinel score to indicate keyframe-derived boundary.
+                            score: 100.0,
+                        });
+
+                        if config
+                            .max_scene_changes
+                            .is_some_and(|max| scenes.len() >= max)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                video_packet_number += 1;
+            }
+            Err(FfmpegError::Eof) => break,
+            Err(error) => return Err(UnbundleError::from(error)),
         }
     }
 

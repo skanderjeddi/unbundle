@@ -156,7 +156,7 @@ pub use probe::MediaProbe;
 pub use progress::{CancellationToken, OperationType, ProgressCallback, ProgressInfo};
 pub use remux::Remuxer;
 #[cfg(feature = "scene")]
-pub use scene::{SceneChange, SceneDetectionOptions};
+pub use scene::{SceneChange, SceneDetectionMode, SceneDetectionOptions};
 #[cfg(feature = "async")]
 pub use stream::{AudioFuture, FrameStream};
 pub use subtitle::{BitmapSubtitleEvent, SubtitleEvent, SubtitleFormat, SubtitleHandle};

@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use unbundle::{MediaFile, SceneDetectionOptions};
+use unbundle::{MediaFile, SceneDetectionMode, SceneDetectionOptions};
 
 const SAMPLE_VIDEO: &str = "tests/fixtures/sample_video.mp4";
 const SAMPLE_MKV: &str = "tests/fixtures/sample_video.mkv";
@@ -47,6 +47,7 @@ fn detect_scenes_with_default_config() {
         (config.threshold - 10.0).abs() < f64::EPSILON,
         "default threshold should be 10.0",
     );
+    assert_eq!(config.mode, SceneDetectionMode::Auto);
     assert!(config.max_duration.is_none());
     assert!(config.max_scene_changes.is_none());
 
@@ -204,6 +205,21 @@ fn detect_scenes_with_max_duration_limit() {
             "scene timestamp should be within configured max duration",
         );
     }
+}
+
+#[test]
+fn detect_scenes_keyframe_mode_runs() {
+    if skip_unless(SAMPLE_VIDEO) {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+    let config = SceneDetectionOptions::new()
+        .mode(SceneDetectionMode::Keyframes)
+        .max_scene_changes(10);
+
+    let scenes = unbundler.video().detect_scenes(Some(config)).unwrap();
+    assert!(scenes.len() <= 10);
 }
 
 #[test]

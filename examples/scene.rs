@@ -6,7 +6,7 @@
 use std::error::Error;
 use std::time::Duration;
 
-use unbundle::{MediaFile, SceneDetectionOptions};
+use unbundle::{MediaFile, SceneDetectionMode, SceneDetectionOptions};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args()
@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Bound analysis for predictable latency on long videos.
     let config = SceneDetectionOptions::new()
+        .mode(SceneDetectionMode::Full)
         .threshold(10.0)
         .max_duration(Duration::from_secs(120))
         .max_scene_changes(100);
