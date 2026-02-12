@@ -226,7 +226,10 @@ fn benchmark_scene(criterion: &mut Criterion) {
     group.bench_function("low threshold", |bencher| {
         bencher.iter(|| {
             let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-            let config = SceneDetectionOptions { threshold: 1.0 };
+            let config = SceneDetectionOptions {
+                threshold: 1.0,
+                ..SceneDetectionOptions::default()
+            };
             let _scenes = unbundler.video().detect_scenes(Some(config)).unwrap();
         });
     });

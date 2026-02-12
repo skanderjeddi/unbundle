@@ -47,6 +47,8 @@ fn detect_scenes_with_default_config() {
         (config.threshold - 10.0).abs() < f64::EPSILON,
         "default threshold should be 10.0",
     );
+    assert!(config.max_duration.is_none());
+    assert!(config.max_scene_changes.is_none());
 
     let scenes = unbundler.video().detect_scenes(Some(config)).unwrap();
     // Should succeed regardless of number of scenes.
@@ -60,11 +62,17 @@ fn detect_scenes_with_low_threshold() {
     }
 
     let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-    let low = SceneDetectionOptions { threshold: 1.0 };
+    let low = SceneDetectionOptions {
+        threshold: 1.0,
+        ..SceneDetectionOptions::default()
+    };
     let scenes_low = unbundler.video().detect_scenes(Some(low)).unwrap();
 
     let mut unbundler2 = MediaFile::open(SAMPLE_VIDEO).unwrap();
-    let high = SceneDetectionOptions { threshold: 99.0 };
+    let high = SceneDetectionOptions {
+        threshold: 99.0,
+        ..SceneDetectionOptions::default()
+    };
     let scenes_high = unbundler2.video().detect_scenes(Some(high)).unwrap();
 
     // With a lower threshold we should find >= as many scenes as with a high one.
@@ -85,7 +93,10 @@ fn detect_scenes_scene_change_fields() {
     let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
     let scenes = unbundler
         .video()
-        .detect_scenes(Some(SceneDetectionOptions { threshold: 1.0 }))
+        .detect_scenes(Some(SceneDetectionOptions {
+            threshold: 1.0,
+            ..SceneDetectionOptions::default()
+        }))
         .unwrap();
 
     for scene in &scenes {
@@ -154,9 +165,45 @@ fn detect_scenes_mkv_format() {
 
 #[test]
 fn scene_config_debug() {
-    let config = SceneDetectionOptions { threshold: 42.0 };
+    let config = SceneDetectionOptions {
+        threshold: 42.0,
+        ..SceneDetectionOptions::default()
+    };
     let debug = format!("{:?}", config);
     assert!(debug.contains("42"), "Debug should show threshold: {debug}");
+}
+
+#[test]
+fn detect_scenes_with_max_scene_changes_limit() {
+    if skip_unless(SAMPLE_VIDEO) {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+    let config = SceneDetectionOptions::new()
+        .threshold(1.0)
+        .max_scene_changes(1);
+
+    let scenes = unbundler.video().detect_scenes(Some(config)).unwrap();
+    assert!(scenes.len() <= 1, "should stop at configured scene limit");
+}
+
+#[test]
+fn detect_scenes_with_max_duration_limit() {
+    if skip_unless(SAMPLE_VIDEO) {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+    let config = SceneDetectionOptions::new().max_duration(std::time::Duration::from_secs(1));
+    let scenes = unbundler.video().detect_scenes(Some(config)).unwrap();
+
+    for scene in scenes {
+        assert!(
+            scene.timestamp <= std::time::Duration::from_secs(1),
+            "scene timestamp should be within configured max duration",
+        );
+    }
 }
 
 #[test]

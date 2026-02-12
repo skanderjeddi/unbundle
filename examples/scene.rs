@@ -4,6 +4,7 @@
 //!   cargo run --features=scene --example scene -- <input_file>
 
 use std::error::Error;
+use std::time::Duration;
 
 use unbundle::{MediaFile, SceneDetectionOptions};
 
@@ -15,9 +16,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Opening {input_path}...");
     let mut unbundler = MediaFile::open(&input_path)?;
 
-    // Use the default threshold (10.0) for scene detection.
-    let config = SceneDetectionOptions::default();
-    println!("Detecting scenes (threshold {:.1})...", config.threshold,);
+    // Bound analysis for predictable latency on long videos.
+    let config = SceneDetectionOptions::new()
+        .threshold(10.0)
+        .max_duration(Duration::from_secs(120))
+        .max_scene_changes(100);
+    println!(
+        "Detecting scenes (threshold {:.1}, max_duration={:?}, max_scene_changes={:?})...",
+        config.threshold,
+        config.max_duration,
+        config.max_scene_changes,
+    );
 
     let scenes = unbundler.video().detect_scenes(Some(config))?;
 

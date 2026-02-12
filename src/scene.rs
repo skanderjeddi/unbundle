@@ -57,11 +57,51 @@ pub struct SceneDetectionOptions {
     /// Range 0.0–100.0. Lower values detect more (weaker) cuts; higher
     /// values only detect obvious hard cuts. Default: 10.0.
     pub threshold: f64,
+    /// Optional maximum analysis duration from the start of the stream.
+    ///
+    /// When set, scene detection stops once decoded frame timestamps exceed
+    /// this duration. This is useful to keep latency predictable on long
+    /// videos.
+    pub max_duration: Option<Duration>,
+    /// Optional maximum number of detected scene changes.
+    ///
+    /// When set, detection returns as soon as this many scene changes are
+    /// found.
+    pub max_scene_changes: Option<usize>,
 }
 
 impl Default for SceneDetectionOptions {
     fn default() -> Self {
-        Self { threshold: 10.0 }
+        Self {
+            threshold: 10.0,
+            max_duration: None,
+            max_scene_changes: None,
+        }
+    }
+}
+
+impl SceneDetectionOptions {
+    /// Create a new scene detection configuration with defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the minimum score required for scene changes.
+    pub fn threshold(mut self, threshold: f64) -> Self {
+        self.threshold = threshold;
+        self
+    }
+
+    /// Limit analysis to the first `duration` of the video.
+    pub fn max_duration(mut self, duration: Duration) -> Self {
+        self.max_duration = Some(duration);
+        self
+    }
+
+    /// Stop after detecting at most `max_changes` scene changes.
+    pub fn max_scene_changes(mut self, max_changes: usize) -> Self {
+        self.max_scene_changes = Some(max_changes);
+        self
     }
 }
 
@@ -96,6 +136,9 @@ pub(crate) fn detect_scenes_impl(
     let mut decoder = decoder_context.decoder().video()?;
 
     let frames_per_second = video_metadata.frames_per_second;
+    let max_timestamp = config
+        .max_duration
+        .map(|duration| crate::conversion::duration_to_stream_timestamp(duration, time_base));
 
     let mut scenes = Vec::new();
     let mut decoded_frame = VideoFrame::empty();
@@ -233,6 +276,13 @@ pub(crate) fn detect_scenes_impl(
                     frame_number,
                     score,
                 });
+
+                if config
+                    .max_scene_changes
+                    .is_some_and(|max_changes| scenes.len() >= max_changes)
+                {
+                    return Ok(());
+                }
             }
         }
         Ok(())
@@ -260,11 +310,22 @@ pub(crate) fn detect_scenes_impl(
             continue;
         }
 
+        if let Some(max_pts) = max_timestamp
+            && packet.pts().is_some_and(|pts| pts > max_pts)
+        {
+            break;
+        }
+
         decoder
             .send_packet(&packet)
             .map_err(|e| UnbundleError::VideoDecodeError(e.to_string()))?;
 
         while decoder.receive_frame(&mut decoded_frame).is_ok() {
+            if let Some(max_pts) = max_timestamp
+                && decoded_frame.pts().is_some_and(|pts| pts > max_pts)
+            {
+                return Ok(scenes);
+            }
             feed_and_collect(&mut graph, &decoded_frame, &mut scenes)?;
         }
     }
@@ -272,6 +333,11 @@ pub(crate) fn detect_scenes_impl(
     // Flush the decoder.
     let _ = decoder.send_eof();
     while decoder.receive_frame(&mut decoded_frame).is_ok() {
+        if let Some(max_pts) = max_timestamp
+            && decoded_frame.pts().is_some_and(|pts| pts > max_pts)
+        {
+            break;
+        }
         let _ = feed_and_collect(&mut graph, &decoded_frame, &mut scenes);
     }
 
@@ -294,6 +360,13 @@ pub(crate) fn detect_scenes_impl(
                 frame_number,
                 score,
             });
+
+            if config
+                .max_scene_changes
+                .is_some_and(|max_changes| scenes.len() >= max_changes)
+            {
+                break;
+            }
         }
     }
 
