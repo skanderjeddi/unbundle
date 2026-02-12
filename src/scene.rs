@@ -26,6 +26,7 @@ use ffmpeg_next::{
     codec::context::Context as CodecContext, filter::Graph as FilterGraph,
     frame::Video as VideoFrame,
 };
+use ffmpeg_sys_next::AVPixelFormat;
 
 use crate::{error::UnbundleError, metadata::VideoMetadata, unbundle::MediaFile};
 
@@ -118,12 +119,15 @@ pub(crate) fn detect_scenes_impl(
             .map_err(|e| UnbundleError::VideoDecodeError(e.to_string()))?;
 
         if decoder.receive_frame(&mut decoded_frame).is_ok() {
-            actual_pix_fmt = Some(decoded_frame.format() as i32);
+            actual_pix_fmt = Some(
+                AVPixelFormat::from(decoded_frame.format()) as i32,
+            );
             break 'probe;
         }
     }
 
-    let pix_fmt = actual_pix_fmt.unwrap_or(decoder.format() as i32);
+    let pix_fmt = actual_pix_fmt
+        .unwrap_or(AVPixelFormat::from(decoder.format()) as i32);
 
     // Build the filter graph: buffer → format → scdet → buffersink
     //
@@ -168,7 +172,7 @@ pub(crate) fn detect_scenes_impl(
         })?;
 
     let scdet_spec = format!(
-        "format=pix_fmts=yuv420p,scdet=threshold={}",
+        "scale=320:-1,format=pix_fmts=yuv420p,scdet=threshold={}",
         config.threshold
     );
     graph
