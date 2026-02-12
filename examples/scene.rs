@@ -17,10 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Use the default threshold (10.0) for scene detection.
     let config = SceneDetectionOptions::default();
-    println!(
-        "Detecting scenes (threshold {:.1})...",
-        config.threshold,
-    );
+    println!("Detecting scenes (threshold {:.1})...", config.threshold,);
 
     let scenes = unbundler.video().detect_scenes(Some(config))?;
 

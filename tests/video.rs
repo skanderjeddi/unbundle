@@ -280,7 +280,10 @@ fn invalid_time_range_returns_error() {
         Duration::from_secs(1),
     ));
 
-    assert!(result.is_err(), "Expected InvalidRange error for time range");
+    assert!(
+        result.is_err(),
+        "Expected InvalidRange error for time range"
+    );
     assert!(
         matches!(result.unwrap_err(), UnbundleError::InvalidRange { .. }),
         "Expected InvalidRange variant",
@@ -402,7 +405,8 @@ fn for_each_frame_matches_frames() {
         .expect("Failed to process frames");
 
     assert_eq!(
-        collected.len() as u64, streaming_count,
+        collected.len() as u64,
+        streaming_count,
         "for_each_frame and frames() should produce the same count",
     );
 }

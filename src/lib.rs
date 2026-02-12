@@ -100,14 +100,13 @@
 
 pub mod audio;
 pub mod audio_iterator;
-#[cfg(feature = "async")]
-pub mod stream;
 pub mod configuration;
+mod conversion;
+#[cfg(feature = "encode")]
+pub mod encode;
+pub mod error;
 #[cfg(feature = "gif")]
 pub mod gif;
-pub mod remux;
-pub mod error;
-pub mod video_iterator;
 #[cfg(feature = "hardware")]
 pub mod hardware_acceleration;
 pub mod keyframe;
@@ -115,47 +114,51 @@ pub mod keyframe;
 pub mod loudness;
 pub mod metadata;
 pub mod packet_iterator;
-#[cfg(feature = "rayon")]
-mod rayon;
 pub mod probe;
 pub mod progress;
+#[cfg(feature = "rayon")]
+mod rayon;
+pub mod remux;
 #[cfg(feature = "scene")]
 pub mod scene;
+#[cfg(feature = "async")]
+pub mod stream;
 pub mod subtitle;
 pub mod thumbnail;
 #[cfg(feature = "transcode")]
 pub mod transcode;
 pub mod unbundle;
-mod conversion;
 pub mod validation;
 pub mod variable_framerate;
 pub mod video;
-#[cfg(feature = "encode")]
-pub mod encode;
+pub mod video_iterator;
 #[cfg(feature = "waveform")]
 pub mod waveform;
 
-#[cfg(feature = "async")]
-pub use stream::{AudioFuture, FrameStream};
 pub use audio::{AudioFormat, AudioHandle};
 pub use audio_iterator::{AudioChunk, AudioIterator};
 pub use configuration::{ExtractOptions, FrameOutputOptions, PixelFormat};
+#[cfg(feature = "encode")]
+pub use encode::{VideoCodec, VideoEncoder, VideoEncoderOptions};
+pub use error::UnbundleError;
 #[cfg(feature = "gif")]
 pub use gif::GifOptions;
-pub use remux::Remuxer;
-pub use error::UnbundleError;
-pub use video_iterator::FrameIterator;
 #[cfg(feature = "hardware")]
 pub use hardware_acceleration::{HardwareAccelerationMode, HardwareDeviceType};
 pub use keyframe::{GroupOfPicturesInfo, KeyFrameMetadata};
 #[cfg(feature = "loudness")]
 pub use loudness::LoudnessInfo;
-pub use metadata::{AudioMetadata, ChapterMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata};
+pub use metadata::{
+    AudioMetadata, ChapterMetadata, MediaMetadata, SubtitleMetadata, VideoMetadata,
+};
 pub use packet_iterator::{PacketInfo, PacketIterator};
 pub use probe::MediaProbe;
 pub use progress::{CancellationToken, OperationType, ProgressCallback, ProgressInfo};
+pub use remux::Remuxer;
 #[cfg(feature = "scene")]
 pub use scene::{SceneChange, SceneDetectionOptions};
+#[cfg(feature = "async")]
+pub use stream::{AudioFuture, FrameStream};
 pub use subtitle::{BitmapSubtitleEvent, SubtitleEvent, SubtitleFormat, SubtitleHandle};
 pub use thumbnail::{ThumbnailHandle, ThumbnailOptions};
 #[cfg(feature = "transcode")]
@@ -164,7 +167,6 @@ pub use unbundle::MediaFile;
 pub use validation::ValidationReport;
 pub use variable_framerate::VariableFrameRateAnalysis;
 pub use video::{FrameMetadata, FrameRange, FrameType, VideoHandle};
-#[cfg(feature = "encode")]
-pub use encode::{VideoCodec, VideoEncoder, VideoEncoderOptions};
+pub use video_iterator::FrameIterator;
 #[cfg(feature = "waveform")]
 pub use waveform::{WaveformBin, WaveformData, WaveformOptions};

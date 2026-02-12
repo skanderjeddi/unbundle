@@ -52,10 +52,7 @@ fn parallel_with_large_gaps() {
     let config = ExtractOptions::new();
     let frames = unbundler
         .video()
-        .frames_parallel(
-            FrameRange::Specific(vec![0, 1, 50, 51, 100, 101]),
-            &config,
-        )
+        .frames_parallel(FrameRange::Specific(vec![0, 1, 50, 51, 100, 101]), &config)
         .unwrap();
 
     assert_eq!(frames.len(), 6, "should extract all 6 requested frames");
@@ -72,10 +69,7 @@ fn parallel_matches_sequential() {
     let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
     let parallel = unbundler
         .video()
-        .frames_parallel(
-            FrameRange::Specific(target.clone()),
-            &ExtractOptions::new(),
-        )
+        .frames_parallel(FrameRange::Specific(target.clone()), &ExtractOptions::new())
         .unwrap();
 
     let mut unbundler2 = MediaFile::open(SAMPLE_VIDEO).unwrap();

@@ -168,7 +168,9 @@ impl MediaFile {
                 CodecContext::from_parameters(codec_parameters).map_err(|error| {
                     UnbundleError::FileOpen {
                         path: canonical_path.clone(),
-                        reason: format!("Failed to read video codec parameters for stream {index}: {error}"),
+                        reason: format!(
+                            "Failed to read video codec parameters for stream {index}: {error}"
+                        ),
                     }
                 })?;
             let video_decoder =
@@ -177,7 +179,9 @@ impl MediaFile {
                     .video()
                     .map_err(|error| UnbundleError::FileOpen {
                         path: canonical_path.clone(),
-                        reason: format!("Failed to create video decoder for stream {index}: {error}"),
+                        reason: format!(
+                            "Failed to create video decoder for stream {index}: {error}"
+                        ),
                     })?;
 
             let width = video_decoder.width();
@@ -362,21 +366,21 @@ impl MediaFile {
             subtitle_stream_indices.push(index);
 
             let codec_parameters = stream.parameters();
-            let decoder_context =
-                CodecContext::from_parameters(codec_parameters).ok();
+            let decoder_context = CodecContext::from_parameters(codec_parameters).ok();
 
             let codec_name = decoder_context
                 .and_then(|ctx| {
                     let name = ctx.id().name();
-                    if name.is_empty() { None } else { Some(name.to_string()) }
+                    if name.is_empty() {
+                        None
+                    } else {
+                        Some(name.to_string())
+                    }
                 })
                 .unwrap_or_else(|| "unknown".to_string());
 
             // Try to read language tag from stream metadata.
-            let language = stream
-                .metadata()
-                .get("language")
-                .map(|s| s.to_string());
+            let language = stream.metadata().get("language").map(|s| s.to_string());
 
             all_subtitle_metadata.push(SubtitleMetadata {
                 codec: codec_name,
@@ -406,14 +410,8 @@ impl MediaFile {
             let mut chapter_list = Vec::with_capacity(input_context.nb_chapters() as usize);
             for (index, chapter) in input_context.chapters().enumerate() {
                 let time_base = chapter.time_base();
-                let start_seconds = crate::conversion::pts_to_seconds(
-                    chapter.start(),
-                    time_base,
-                );
-                let end_seconds = crate::conversion::pts_to_seconds(
-                    chapter.end(),
-                    time_base,
-                );
+                let start_seconds = crate::conversion::pts_to_seconds(chapter.start(), time_base);
+                let end_seconds = crate::conversion::pts_to_seconds(chapter.end(), time_base);
                 let title = chapter.metadata().get("title").map(|s| s.to_string());
 
                 chapter_list.push(ChapterMetadata {
@@ -549,14 +547,12 @@ impl MediaFile {
     /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn video_track(&mut self, track_index: usize) -> Result<VideoHandle<'_>, UnbundleError> {
-        let stream_index = self
-            .video_stream_indices
-            .get(track_index)
-            .copied()
-            .ok_or(UnbundleError::VideoTrackOutOfRange {
+        let stream_index = self.video_stream_indices.get(track_index).copied().ok_or(
+            UnbundleError::VideoTrackOutOfRange {
                 track_index,
                 track_count: self.video_stream_indices.len(),
-            })?;
+            },
+        )?;
 
         Ok(VideoHandle {
             unbundler: self,

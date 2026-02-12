@@ -93,7 +93,10 @@ fn validate_display_impl() {
     let display = format!("{report}");
 
     assert!(!display.is_empty(), "Display output should not be empty");
-    assert!(display.contains("[INFO]"), "Display should include [INFO] labels");
+    assert!(
+        display.contains("[INFO]"),
+        "Display should include [INFO] labels"
+    );
 }
 
 #[test]

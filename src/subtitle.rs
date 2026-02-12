@@ -23,9 +23,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use ffmpeg_next::{
-    codec::context::Context as CodecContext,
-    subtitle::Bitmap as SubtitleBitmap,
-    Subtitle,
+    Subtitle, codec::context::Context as CodecContext, subtitle::Bitmap as SubtitleBitmap,
     subtitle::Rect,
 };
 use image::{DynamicImage, RgbaImage};
@@ -236,10 +234,7 @@ impl<'a> SubtitleHandle<'a> {
     /// # Errors
     ///
     /// Returns errors from [`extract`](SubtitleHandle::extract).
-    pub fn extract_text(
-        &mut self,
-        format: SubtitleFormat,
-    ) -> Result<String, UnbundleError> {
+    pub fn extract_text(&mut self, format: SubtitleFormat) -> Result<String, UnbundleError> {
         let entries = self.extract()?;
         Ok(format_subtitles(&entries, format))
     }
@@ -427,7 +422,10 @@ impl<'a> SubtitleHandle<'a> {
     /// ```
     pub fn extract_bitmaps(&mut self) -> Result<Vec<BitmapSubtitleEvent>, UnbundleError> {
         let subtitle_stream_index = self.resolve_stream_index()?;
-        log::debug!("Extracting bitmap subtitles from stream {}", subtitle_stream_index);
+        log::debug!(
+            "Extracting bitmap subtitles from stream {}",
+            subtitle_stream_index
+        );
 
         let stream = self
             .unbundler
@@ -539,8 +537,7 @@ fn decode_bitmap_rect(bmp: &SubtitleBitmap<'_>) -> Option<DynamicImage> {
 
         // Read palette (up to 256 RGBA entries).
         let palette_len = nb_colors.min(256);
-        let palette_bytes =
-            std::slice::from_raw_parts(data1 as *const u8, palette_len * 4);
+        let palette_bytes = std::slice::from_raw_parts(data1 as *const u8, palette_len * 4);
 
         let mut rgba_buf = vec![0u8; (w * h * 4) as usize];
 
@@ -549,7 +546,7 @@ fn decode_bitmap_rect(bmp: &SubtitleBitmap<'_>) -> Option<DynamicImage> {
                 let idx = *data0.add(row * linesize + col) as usize;
                 let dst = (row * w as usize + col) * 4;
                 if idx < palette_len {
-                    rgba_buf[dst]     = palette_bytes[idx * 4];
+                    rgba_buf[dst] = palette_bytes[idx * 4];
                     rgba_buf[dst + 1] = palette_bytes[idx * 4 + 1];
                     rgba_buf[dst + 2] = palette_bytes[idx * 4 + 2];
                     rgba_buf[dst + 3] = palette_bytes[idx * 4 + 3];
@@ -674,5 +671,9 @@ fn strip_ass_tags(input: &str) -> String {
     }
 
     // Replace \N (ASS line break) with newline.
-    result.replace("\\N", "\n").replace("\\n", "\n").trim().to_string()
+    result
+        .replace("\\N", "\n")
+        .replace("\\n", "\n")
+        .trim()
+        .to_string()
 }

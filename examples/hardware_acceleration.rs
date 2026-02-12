@@ -31,11 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Extracted {} frames", frames.len());
     if let Some(first) = frames.first() {
         first.save("hw_frame.png")?;
-        println!(
-            "Saved hw_frame.png ({}x{})",
-            first.width(),
-            first.height(),
-        );
+        println!("Saved hw_frame.png ({}x{})", first.width(), first.height(),);
     }
 
     println!("Done!");

@@ -6,8 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use unbundle::{
-    ExtractOptions, FrameRange, MediaFile, PixelFormat,
-    ProgressCallback, ProgressInfo,
+    ExtractOptions, FrameRange, MediaFile, PixelFormat, ProgressCallback, ProgressInfo,
 };
 
 fn sample_video_path() -> &'static str {
@@ -50,8 +49,7 @@ fn frames_rgb8_default() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
-    let config = ExtractOptions::new()
-        .with_pixel_format(PixelFormat::Rgb8);
+    let config = ExtractOptions::new().with_pixel_format(PixelFormat::Rgb8);
     let frames = unbundler
         .video()
         .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -73,8 +71,7 @@ fn frames_rgba8() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
-    let config = ExtractOptions::new()
-        .with_pixel_format(PixelFormat::Rgba8);
+    let config = ExtractOptions::new().with_pixel_format(PixelFormat::Rgba8);
     let frames = unbundler
         .video()
         .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -95,8 +92,7 @@ fn frames_gray8() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
-    let config = ExtractOptions::new()
-        .with_pixel_format(PixelFormat::Gray8);
+    let config = ExtractOptions::new().with_pixel_format(PixelFormat::Gray8);
     let frames = unbundler
         .video()
         .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -119,8 +115,7 @@ fn frames_custom_width() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
-    let config = ExtractOptions::new()
-        .with_resolution(Some(320), None); // Auto height
+    let config = ExtractOptions::new().with_resolution(Some(320), None); // Auto height
     let frames = unbundler
         .video()
         .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -139,8 +134,7 @@ fn frames_custom_height() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
-    let config = ExtractOptions::new()
-        .with_resolution(None, Some(240));
+    let config = ExtractOptions::new().with_resolution(None, Some(240));
     let frames = unbundler
         .video()
         .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -216,5 +210,8 @@ fn progress_callback_fires() {
         .expect("Failed to extract");
 
     let count = *counter.count.lock().unwrap();
-    assert!(count > 0, "Progress callback should have been called at least once");
+    assert!(
+        count > 0,
+        "Progress callback should have been called at least once"
+    );
 }

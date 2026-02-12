@@ -79,7 +79,12 @@ fn segments_combined_frame_count() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open");
-    let fps = unbundler.metadata().video.as_ref().unwrap().frames_per_second;
+    let fps = unbundler
+        .metadata()
+        .video
+        .as_ref()
+        .unwrap()
+        .frames_per_second;
 
     // Each 500ms segment at 30fps should produce ~15 frames.
     let seg1_frames = unbundler

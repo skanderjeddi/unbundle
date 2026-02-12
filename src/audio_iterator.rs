@@ -20,12 +20,12 @@
 
 use std::time::Duration;
 
-use ffmpeg_next::{ChannelLayout, Error as FfmpegError, Packet};
 use ffmpeg_next::codec::context::Context as CodecContext;
 use ffmpeg_next::decoder::Audio as AudioDecoder;
 use ffmpeg_next::format::{Sample, sample::Type as SampleType};
 use ffmpeg_next::frame::Audio as AudioFrame;
 use ffmpeg_next::software::resampling::Context as ResamplingContext;
+use ffmpeg_next::{ChannelLayout, Error as FfmpegError, Packet};
 
 use crate::error::UnbundleError;
 use crate::unbundle::MediaFile;
@@ -86,9 +86,7 @@ impl<'a> AudioIterator<'a> {
             ChannelLayout::MONO,
             sample_rate,
         )
-        .map_err(|e| {
-            UnbundleError::AudioDecodeError(format!("Failed to create resampler: {e}"))
-        })?;
+        .map_err(|e| UnbundleError::AudioDecodeError(format!("Failed to create resampler: {e}")))?;
 
         Ok(Self {
             unbundler,
@@ -124,10 +122,7 @@ impl<'a> Iterator for AudioIterator<'a> {
                         let data = self.resampled_frame.data(0);
                         let sample_count = self.resampled_frame.samples();
                         let float_samples: &[f32] = unsafe {
-                            std::slice::from_raw_parts(
-                                data.as_ptr() as *const f32,
-                                sample_count,
-                            )
+                            std::slice::from_raw_parts(data.as_ptr() as *const f32, sample_count)
                         };
 
                         let timestamp = Duration::from_secs_f64(

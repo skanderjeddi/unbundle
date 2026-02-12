@@ -88,20 +88,22 @@ impl<'a> Transcoder<'a> {
     /// - [`UnbundleError::NoAudioStream`] if no audio stream exists.
     /// - [`UnbundleError::TranscodeError`] if encoding fails.
     pub fn run<P: AsRef<Path>>(self, path: P) -> Result<(), UnbundleError> {
-        log::info!("Transcoding audio to {:?} (format={:?})", path.as_ref(), self.format);
+        log::info!(
+            "Transcoding audio to {:?} (format={:?})",
+            path.as_ref(),
+            self.format
+        );
         match (self.start, self.end) {
-            (Some(start), Some(end)) => {
-                self.unbundler
-                    .audio()
-                    .save_range(path, start, end, self.format)
-                    .map_err(|e| UnbundleError::TranscodeError(e.to_string()))
-            }
-            _ => {
-                self.unbundler
-                    .audio()
-                    .save(path, self.format)
-                    .map_err(|e| UnbundleError::TranscodeError(e.to_string()))
-            }
+            (Some(start), Some(end)) => self
+                .unbundler
+                .audio()
+                .save_range(path, start, end, self.format)
+                .map_err(|e| UnbundleError::TranscodeError(e.to_string())),
+            _ => self
+                .unbundler
+                .audio()
+                .save(path, self.format)
+                .map_err(|e| UnbundleError::TranscodeError(e.to_string())),
         }
     }
 
@@ -113,18 +115,16 @@ impl<'a> Transcoder<'a> {
     pub fn run_to_memory(self) -> Result<Vec<u8>, UnbundleError> {
         log::debug!("Transcoding audio to memory (format={:?})", self.format);
         match (self.start, self.end) {
-            (Some(start), Some(end)) => {
-                self.unbundler
-                    .audio()
-                    .extract_range(start, end, self.format)
-                    .map_err(|e| UnbundleError::TranscodeError(e.to_string()))
-            }
-            _ => {
-                self.unbundler
-                    .audio()
-                    .extract(self.format)
-                    .map_err(|e| UnbundleError::TranscodeError(e.to_string()))
-            }
+            (Some(start), Some(end)) => self
+                .unbundler
+                .audio()
+                .extract_range(start, end, self.format)
+                .map_err(|e| UnbundleError::TranscodeError(e.to_string())),
+            _ => self
+                .unbundler
+                .audio()
+                .extract(self.format)
+                .map_err(|e| UnbundleError::TranscodeError(e.to_string())),
         }
     }
 }

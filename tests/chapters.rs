@@ -134,7 +134,10 @@ fn chapter_start_end_durations() {
 
     // First chapter: 0s–2s
     let first = &chapters[0];
-    assert!(first.start.as_secs_f64() < 0.1, "First chapter should start near 0");
+    assert!(
+        first.start.as_secs_f64() < 0.1,
+        "First chapter should start near 0"
+    );
     assert!(
         (first.end.as_secs_f64() - 2.0).abs() < 0.1,
         "First chapter should end near 2s, got {:?}",

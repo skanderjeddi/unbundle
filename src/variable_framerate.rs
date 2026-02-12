@@ -135,8 +135,16 @@ pub(crate) fn analyze_variable_framerate_impl(
     let min_duration = durations.iter().copied().fold(f64::INFINITY, f64::min);
     let max_duration = durations.iter().copied().fold(0.0_f64, f64::max);
 
-    let max_fps = if min_duration > 0.0 { 1.0 / min_duration } else { 0.0 };
-    let min_fps = if max_duration > 0.0 { 1.0 / max_duration } else { 0.0 };
+    let max_fps = if min_duration > 0.0 {
+        1.0 / min_duration
+    } else {
+        0.0
+    };
+    let min_fps = if max_duration > 0.0 {
+        1.0 / max_duration
+    } else {
+        0.0
+    };
     let mean_fps = if mean > 0.0 { 1.0 / mean } else { 0.0 };
 
     // Clamp to the observed range to avoid floating-point rounding artifacts

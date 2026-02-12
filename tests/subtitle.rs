@@ -55,8 +55,14 @@ fn save_subtitles_srt() {
     let content = std::fs::read_to_string(&output_path).expect("Failed to read SRT");
     assert!(!content.is_empty(), "SRT file should not be empty");
     // SRT files have numeric cue indices.
-    assert!(content.contains("1\n") || content.contains("1\r\n"), "SRT should start with cue 1");
-    assert!(content.contains("-->"), "SRT should contain --> timestamp separator");
+    assert!(
+        content.contains("1\n") || content.contains("1\r\n"),
+        "SRT should start with cue 1"
+    );
+    assert!(
+        content.contains("-->"),
+        "SRT should contain --> timestamp separator"
+    );
 
     let _ = std::fs::remove_file(&output_path);
 }
@@ -78,8 +84,14 @@ fn save_subtitles_webvtt() {
         .expect("Failed to save WebVTT");
 
     let content = std::fs::read_to_string(&output_path).expect("Failed to read WebVTT");
-    assert!(content.starts_with("WEBVTT"), "WebVTT must have WEBVTT header");
-    assert!(content.contains("-->"), "WebVTT should contain --> separator");
+    assert!(
+        content.starts_with("WEBVTT"),
+        "WebVTT must have WEBVTT header"
+    );
+    assert!(
+        content.contains("-->"),
+        "WebVTT should contain --> separator"
+    );
 
     let _ = std::fs::remove_file(&output_path);
 }

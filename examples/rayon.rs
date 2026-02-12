@@ -17,11 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut unbundler = MediaFile::open(&input_path)?;
 
     let metadata = unbundler.metadata();
-    let total_frames = metadata
-        .video
-        .as_ref()
-        .map(|v| v.frame_count)
-        .unwrap_or(0);
+    let total_frames = metadata.video.as_ref().map(|v| v.frame_count).unwrap_or(0);
 
     if total_frames < 100 {
         println!("Video has only {total_frames} frames — extracting all of them.");

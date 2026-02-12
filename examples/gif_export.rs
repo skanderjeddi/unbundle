@@ -7,12 +7,16 @@ use unbundle::{FrameRange, GifOptions, MediaFile, UnbundleError};
 
 #[cfg(not(feature = "gif"))]
 fn main() {
-    eprintln!("This example requires the `gif` feature: cargo run --features gif --example gif_export -- <video_path>");
+    eprintln!(
+        "This example requires the `gif` feature: cargo run --features gif --example gif_export -- <video_path>"
+    );
 }
 
 #[cfg(feature = "gif")]
 fn main() -> Result<(), UnbundleError> {
-    let path = std::env::args().nth(1).expect("Usage: gif_export <video_path>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("Usage: gif_export <video_path>");
 
     let mut unbundler = MediaFile::open(&path)?;
     let meta = unbundler.metadata().clone();
@@ -35,10 +39,9 @@ fn main() -> Result<(), UnbundleError> {
     println!("GIF saved to {output}");
 
     // Also export to memory.
-    let bytes = unbundler.video().export_gif_to_memory(
-        FrameRange::Range(0, frame_count as u64),
-        &config,
-    )?;
+    let bytes = unbundler
+        .video()
+        .export_gif_to_memory(FrameRange::Range(0, frame_count as u64), &config)?;
     println!("GIF in memory: {} bytes", bytes.len());
 
     Ok(())

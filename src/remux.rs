@@ -191,9 +191,8 @@ impl Remuxer {
 
             if include {
                 // Add a corresponding output stream.
-                let mut out_stream = output_context.add_stream(ffmpeg_next::encoder::find(
-                    Id::None,
-                ))?;
+                let mut out_stream =
+                    output_context.add_stream(ffmpeg_next::encoder::find(Id::None))?;
                 out_stream.set_parameters(stream.parameters());
                 // Reset codec tag to let the muxer choose.
                 unsafe {

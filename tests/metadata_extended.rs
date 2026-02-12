@@ -61,10 +61,7 @@ fn video_tracks_populated() {
     let meta = unbundler.metadata();
 
     if let Some(tracks) = &meta.video_tracks {
-        assert!(
-            !tracks.is_empty(),
-            "expected at least one video track"
-        );
+        assert!(!tracks.is_empty(), "expected at least one video track");
         for track in tracks {
             assert!(track.width > 0);
             assert!(track.height > 0);

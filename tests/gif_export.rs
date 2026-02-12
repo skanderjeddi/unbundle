@@ -55,7 +55,10 @@ fn gif_export_to_file() {
 
 #[test]
 fn gif_config_builder() {
-    let config = GifOptions::default().width(320).frame_delay(50).repeat(None);
+    let config = GifOptions::default()
+        .width(320)
+        .frame_delay(50)
+        .repeat(None);
     assert_eq!(config.width, Some(320));
     assert_eq!(config.frame_delay, 50);
     assert!(config.repeat.is_none());

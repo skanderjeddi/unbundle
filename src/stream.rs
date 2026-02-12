@@ -207,9 +207,7 @@ pub(crate) fn create_audio_future(
         };
 
         match range {
-            Some((start, end)) => {
-                extractor.extract_range_with_options(start, end, format, &config)
-            }
+            Some((start, end)) => extractor.extract_range_with_options(start, end, format, &config),
             None => extractor.extract_with_options(format, &config),
         }
     });

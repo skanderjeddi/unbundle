@@ -21,12 +21,8 @@ fn thumbnail_at_timestamp() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open");
-    let thumb = ThumbnailHandle::at_timestamp(
-        &mut unbundler,
-        Duration::from_secs(1),
-        320,
-    )
-    .expect("Failed to generate thumbnail");
+    let thumb = ThumbnailHandle::at_timestamp(&mut unbundler, Duration::from_secs(1), 320)
+        .expect("Failed to generate thumbnail");
 
     // The longest edge should be <= 320.
     assert!(
@@ -47,8 +43,8 @@ fn thumbnail_at_frame() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open");
-    let thumb = ThumbnailHandle::at_frame(&mut unbundler, 30, 200)
-        .expect("Failed to generate thumbnail");
+    let thumb =
+        ThumbnailHandle::at_frame(&mut unbundler, 30, 200).expect("Failed to generate thumbnail");
 
     assert!(
         thumb.width() <= 200 && thumb.height() <= 200,
@@ -68,8 +64,8 @@ fn thumbnail_preserves_aspect_ratio() {
     let video_meta = unbundler.metadata().video.as_ref().unwrap().clone();
     let original_ratio = video_meta.width as f64 / video_meta.height as f64;
 
-    let thumb = ThumbnailHandle::at_frame(&mut unbundler, 0, 640)
-        .expect("Failed to generate thumbnail");
+    let thumb =
+        ThumbnailHandle::at_frame(&mut unbundler, 0, 640).expect("Failed to generate thumbnail");
     let thumb_ratio = thumb.width() as f64 / thumb.height() as f64;
 
     assert!(
@@ -88,8 +84,7 @@ fn thumbnail_dimensions() {
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open");
     let config = ThumbnailOptions::new(3, 2).with_thumbnail_width(160);
-    let grid = ThumbnailHandle::grid(&mut unbundler, &config)
-        .expect("Failed to generate grid");
+    let grid = ThumbnailHandle::grid(&mut unbundler, &config).expect("Failed to generate grid");
 
     // Grid should be 3 * 160 = 480 wide.
     assert_eq!(grid.width(), 480, "Grid width should be 3 × 160 = 480");
@@ -108,8 +103,7 @@ fn thumbnail_default_width() {
     let config = ThumbnailOptions::new(2, 2);
     assert_eq!(config.thumbnail_width, 320, "Default width should be 320");
 
-    let grid = ThumbnailHandle::grid(&mut unbundler, &config)
-        .expect("Failed to generate grid");
+    let grid = ThumbnailHandle::grid(&mut unbundler, &config).expect("Failed to generate grid");
 
     assert_eq!(grid.width(), 640, "Grid width should be 2 × 320 = 640");
 }
@@ -128,8 +122,8 @@ fn smart_thumbnail_not_black() {
 
     // Smart thumbnail should pick a frame with content, not pure black.
     let gray = thumb.to_luma8();
-    let mean: f64 = gray.as_raw().iter().map(|&p| p as f64).sum::<f64>()
-        / gray.as_raw().len() as f64;
+    let mean: f64 =
+        gray.as_raw().iter().map(|&p| p as f64).sum::<f64>() / gray.as_raw().len() as f64;
 
     // The testsrc fixture is colourful, so mean should be well above 0.
     assert!(
@@ -147,8 +141,8 @@ fn smart_thumbnail_fits_max_dimension() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open");
-    let thumb = ThumbnailHandle::smart(&mut unbundler, 5, 256)
-        .expect("Failed to generate smart thumbnail");
+    let thumb =
+        ThumbnailHandle::smart(&mut unbundler, 5, 256).expect("Failed to generate smart thumbnail");
 
     assert!(
         thumb.width() <= 256 && thumb.height() <= 256,

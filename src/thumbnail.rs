@@ -6,8 +6,8 @@
 
 use std::time::Duration;
 
-use image::{DynamicImage, GenericImage};
 use image::imageops::FilterType;
+use image::{DynamicImage, GenericImage};
 
 use crate::configuration::ExtractOptions;
 use crate::error::UnbundleError;
@@ -73,7 +73,7 @@ impl ThumbnailOptions {
 ///
 /// ```no_run
 /// use std::time::Duration;
-/// 
+///
 /// use unbundle::{MediaFile, ThumbnailHandle, ThumbnailOptions, UnbundleError};
 ///
 /// let mut unbundler = MediaFile::open("input.mp4")?;
@@ -111,16 +111,15 @@ impl ThumbnailHandle {
         timestamp: Duration,
         max_dimension: u32,
     ) -> Result<DynamicImage, UnbundleError> {
-        log::debug!("Generating thumbnail at {:?} (max_dim={})", timestamp, max_dimension);
+        log::debug!(
+            "Generating thumbnail at {:?} (max_dim={})",
+            timestamp,
+            max_dimension
+        );
         let image = unbundler.video().frame_at(timestamp)?;
         let (width, height) = (image.width(), image.height());
-        let (thumb_width, thumb_height) =
-            fit_dimensions(width, height, max_dimension);
-        Ok(image.resize_exact(
-            thumb_width,
-            thumb_height,
-            FilterType::Triangle,
-        ))
+        let (thumb_width, thumb_height) = fit_dimensions(width, height, max_dimension);
+        Ok(image.resize_exact(thumb_width, thumb_height, FilterType::Triangle))
     }
 
     /// Extract a single thumbnail at a frame number, scaled to fit within
@@ -136,13 +135,8 @@ impl ThumbnailHandle {
     ) -> Result<DynamicImage, UnbundleError> {
         let image = unbundler.video().frame(frame_number)?;
         let (width, height) = (image.width(), image.height());
-        let (thumb_width, thumb_height) =
-            fit_dimensions(width, height, max_dimension);
-        Ok(image.resize_exact(
-            thumb_width,
-            thumb_height,
-            FilterType::Triangle,
-        ))
+        let (thumb_width, thumb_height) = fit_dimensions(width, height, max_dimension);
+        Ok(image.resize_exact(thumb_width, thumb_height, FilterType::Triangle))
     }
 
     /// Generate a thumbnail contact-sheet grid.
@@ -183,7 +177,12 @@ impl ThumbnailHandle {
         config: &ThumbnailOptions,
         extraction_config: &ExtractOptions,
     ) -> Result<DynamicImage, UnbundleError> {
-        log::debug!("Generating {}x{} thumbnail grid (thumb_width={})", config.columns, config.rows, config.thumbnail_width);
+        log::debug!(
+            "Generating {}x{} thumbnail grid (thumb_width={})",
+            config.columns,
+            config.rows,
+            config.thumbnail_width
+        );
         let video_metadata = unbundler
             .metadata
             .video
@@ -205,10 +204,9 @@ impl ThumbnailHandle {
             .filter(|number| *number < frame_count)
             .collect();
 
-        let frames = unbundler.video().frames_with_options(
-            FrameRange::Specific(frame_numbers),
-            extraction_config,
-        )?;
+        let frames = unbundler
+            .video()
+            .frames_with_options(FrameRange::Specific(frame_numbers), extraction_config)?;
 
         // Compute thumbnail dimensions preserving aspect ratio.
         let scale_factor = config.thumbnail_width as f64 / video_metadata.width as f64;
@@ -227,11 +225,7 @@ impl ThumbnailHandle {
                 break;
             }
 
-            let thumbnail = frame.resize_exact(
-                scaled_width,
-                scaled_height,
-                FilterType::Triangle,
-            );
+            let thumbnail = frame.resize_exact(scaled_width, scaled_height, FilterType::Triangle);
 
             let x = column * scaled_width;
             let y = row * scaled_height;
@@ -290,7 +284,11 @@ impl ThumbnailHandle {
         max_dimension: u32,
         extraction_config: &ExtractOptions,
     ) -> Result<DynamicImage, UnbundleError> {
-        log::debug!("Generating smart thumbnail (samples={}, max_dim={})", sample_count, max_dimension);
+        log::debug!(
+            "Generating smart thumbnail (samples={}, max_dim={})",
+            sample_count,
+            max_dimension
+        );
         let video_metadata = unbundler
             .metadata
             .video
@@ -334,14 +332,9 @@ impl ThumbnailHandle {
         let best_frame_number = frame_numbers.get(best_index).copied().unwrap_or(0);
         let full_image = unbundler.video().frame(best_frame_number)?;
         let (width, height) = (full_image.width(), full_image.height());
-        let (thumb_width, thumb_height) =
-            fit_dimensions(width, height, max_dimension);
+        let (thumb_width, thumb_height) = fit_dimensions(width, height, max_dimension);
 
-        Ok(full_image.resize_exact(
-            thumb_width,
-            thumb_height,
-            FilterType::Triangle,
-        ))
+        Ok(full_image.resize_exact(thumb_width, thumb_height, FilterType::Triangle))
     }
 }
 

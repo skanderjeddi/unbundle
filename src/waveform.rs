@@ -19,11 +19,11 @@
 
 use std::time::Duration;
 
-use ffmpeg_next::{ChannelLayout, Rational};
 use ffmpeg_next::codec::context::Context as CodecContext;
 use ffmpeg_next::format::{Sample, sample::Type as SampleType};
 use ffmpeg_next::frame::Audio as AudioFrame;
 use ffmpeg_next::software::resampling::Context as ResamplingContext;
+use ffmpeg_next::{ChannelLayout, Rational};
 
 use crate::error::UnbundleError;
 use crate::unbundle::MediaFile;
@@ -104,7 +104,11 @@ pub(crate) fn generate_waveform_impl(
     audio_stream_index: usize,
     config: &WaveformOptions,
 ) -> Result<WaveformData, UnbundleError> {
-    log::debug!("Generating waveform (stream={}, bins={})", audio_stream_index, config.bins);
+    log::debug!(
+        "Generating waveform (stream={}, bins={})",
+        audio_stream_index,
+        config.bins
+    );
     let stream = unbundler
         .input_context
         .stream(audio_stream_index)
@@ -128,9 +132,7 @@ pub(crate) fn generate_waveform_impl(
         ChannelLayout::MONO,
         sample_rate,
     )
-    .map_err(|e| {
-        UnbundleError::WaveformDecodeError(format!("Failed to create resampler: {e}"))
-    })?;
+    .map_err(|e| UnbundleError::WaveformDecodeError(format!("Failed to create resampler: {e}")))?;
 
     // Compute time-range boundaries in stream time base.
     let start_pts: Option<i64> = config.start.map(|d| {
@@ -172,20 +174,19 @@ pub(crate) fn generate_waveform_impl(
             }
         }
 
-        decoder.send_packet(&packet).map_err(|e| {
-            UnbundleError::WaveformDecodeError(format!("Audio decode error: {e}"))
-        })?;
+        decoder
+            .send_packet(&packet)
+            .map_err(|e| UnbundleError::WaveformDecodeError(format!("Audio decode error: {e}")))?;
 
         while decoder.receive_frame(&mut decoded_frame).is_ok() {
-            let delay = resampler.run(&decoded_frame, &mut resampled_frame).map_err(|e| {
-                UnbundleError::WaveformDecodeError(format!("Resample error: {e}"))
-            })?;
+            let delay = resampler
+                .run(&decoded_frame, &mut resampled_frame)
+                .map_err(|e| UnbundleError::WaveformDecodeError(format!("Resample error: {e}")))?;
 
             let data = resampled_frame.data(0);
             let sample_count = resampled_frame.samples();
-            let float_samples: &[f32] = unsafe {
-                std::slice::from_raw_parts(data.as_ptr() as *const f32, sample_count)
-            };
+            let float_samples: &[f32] =
+                unsafe { std::slice::from_raw_parts(data.as_ptr() as *const f32, sample_count) };
             all_samples.extend_from_slice(float_samples);
 
             if delay.is_some() {
@@ -194,9 +195,8 @@ pub(crate) fn generate_waveform_impl(
                 if resampler.run(&flush_frame, &mut resampled_frame).is_ok() {
                     let data = resampled_frame.data(0);
                     let sc = resampled_frame.samples();
-                    let fs: &[f32] = unsafe {
-                        std::slice::from_raw_parts(data.as_ptr() as *const f32, sc)
-                    };
+                    let fs: &[f32] =
+                        unsafe { std::slice::from_raw_parts(data.as_ptr() as *const f32, sc) };
                     all_samples.extend_from_slice(fs);
                 }
             }

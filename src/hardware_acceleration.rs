@@ -16,13 +16,12 @@
 //! silently falls back to software decoding.
 
 use ffmpeg_next::{
-    codec::context::Context as CodecContext,
-    decoder::Video as VideoDecoder,
+    codec::context::Context as CodecContext, decoder::Video as VideoDecoder,
     frame::Video as VideoFrame,
 };
 use ffmpeg_sys_next::{
-    AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX,
-    AVBufferRef, AVCodecContext, AVCodecHWConfig, AVHWDeviceType,
+    AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX, AVBufferRef, AVCodecContext, AVCodecHWConfig,
+    AVHWDeviceType,
 };
 
 use crate::error::UnbundleError;
@@ -84,9 +83,7 @@ impl HardwareDeviceType {
             HardwareDeviceType::Vaapi => AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI,
             HardwareDeviceType::Dxva2 => AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2,
             HardwareDeviceType::D3d11va => AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA,
-            HardwareDeviceType::VideoToolbox => {
-                AVHWDeviceType::AV_HWDEVICE_TYPE_VIDEOTOOLBOX
-            }
+            HardwareDeviceType::VideoToolbox => AVHWDeviceType::AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
             HardwareDeviceType::Qsv => AVHWDeviceType::AV_HWDEVICE_TYPE_QSV,
         }
     }
@@ -107,12 +104,8 @@ pub fn available_hardware_devices() -> Vec<HardwareDeviceType> {
             AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA => Some(HardwareDeviceType::Cuda),
             AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI => Some(HardwareDeviceType::Vaapi),
             AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2 => Some(HardwareDeviceType::Dxva2),
-            AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA => {
-                Some(HardwareDeviceType::D3d11va)
-            }
-            AVHWDeviceType::AV_HWDEVICE_TYPE_VIDEOTOOLBOX => {
-                Some(HardwareDeviceType::VideoToolbox)
-            }
+            AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA => Some(HardwareDeviceType::D3d11va),
+            AVHWDeviceType::AV_HWDEVICE_TYPE_VIDEOTOOLBOX => Some(HardwareDeviceType::VideoToolbox),
             AVHWDeviceType::AV_HWDEVICE_TYPE_QSV => Some(HardwareDeviceType::Qsv),
             _ => None,
         };
@@ -178,8 +171,7 @@ pub(crate) fn try_create_hw_decoder(
             // Attach to the codec context and create the decoder.
             unsafe {
                 let ctx_ptr = codec_context.as_ptr() as *mut AVCodecContext;
-                (*ctx_ptr).hw_device_ctx =
-                    ffmpeg_sys_next::av_buffer_ref(hw_device_ctx);
+                (*ctx_ptr).hw_device_ctx = ffmpeg_sys_next::av_buffer_ref(hw_device_ctx);
             }
             let decoder = codec_context.decoder().video()?;
 
@@ -274,10 +266,7 @@ fn find_best_hw_device_for_codec(codec_context: &CodecContext) -> Option<AVHWDev
 }
 
 /// Check whether a codec supports a specific HW device type.
-fn codec_supports_hw_type(
-    codec_context: &CodecContext,
-    device_type: AVHWDeviceType,
-) -> bool {
+fn codec_supports_hw_type(codec_context: &CodecContext, device_type: AVHWDeviceType) -> bool {
     let codec_ptr = unsafe { (*codec_context.as_ptr()).codec };
     if codec_ptr.is_null() {
         return false;
@@ -294,9 +283,7 @@ fn codec_supports_hw_type(
 
         let methods = unsafe { (*config).methods };
         let dt = unsafe { (*config).device_type };
-        if methods & (AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32) != 0
-            && dt == device_type
-        {
+        if methods & (AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32) != 0 && dt == device_type {
             return true;
         }
 

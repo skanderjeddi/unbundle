@@ -58,10 +58,7 @@ async fn stream_non_consecutive_frames() {
     let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
     let mut stream = unbundler
         .video()
-        .frame_stream(
-            FrameRange::Specific(vec![0, 30, 60]),
-            ExtractOptions::new(),
-        )
+        .frame_stream(FrameRange::Specific(vec![0, 30, 60]), ExtractOptions::new())
         .unwrap();
 
     let mut frames = Vec::new();

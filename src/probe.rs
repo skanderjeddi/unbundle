@@ -80,12 +80,7 @@ impl MediaProbe {
     ///     }
     /// }
     /// ```
-    pub fn probe_many<P: AsRef<Path>>(
-        paths: &[P],
-    ) -> Vec<Result<MediaMetadata, UnbundleError>> {
-        paths
-            .iter()
-            .map(|path| Self::probe(path))
-            .collect()
+    pub fn probe_many<P: AsRef<Path>>(paths: &[P]) -> Vec<Result<MediaMetadata, UnbundleError>> {
+        paths.iter().map(|path| Self::probe(path)).collect()
     }
 }

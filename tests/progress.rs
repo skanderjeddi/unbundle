@@ -6,8 +6,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use unbundle::{
-    CancellationToken, ExtractOptions, FrameRange, MediaFile,
-    OperationType, ProgressCallback, ProgressInfo, UnbundleError,
+    CancellationToken, ExtractOptions, FrameRange, MediaFile, OperationType, ProgressCallback,
+    ProgressInfo, UnbundleError,
 };
 
 fn sample_video_path() -> &'static str {
@@ -55,8 +55,7 @@ fn cancelled_extraction_returns_error() {
     let token = CancellationToken::new();
     token.cancel(); // Cancel immediately.
 
-    let config = ExtractOptions::new()
-        .with_cancellation(token);
+    let config = ExtractOptions::new().with_cancellation(token);
 
     let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
     let result = unbundler

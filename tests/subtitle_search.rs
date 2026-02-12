@@ -52,10 +52,7 @@ fn search_subtitles_case_insensitive() {
     let mut unbundler = MediaFile::open(path).expect("open");
     let results = unbundler.subtitle().search("hello").expect("search");
 
-    assert!(
-        !results.is_empty(),
-        "expected to find 'hello' in subtitles"
-    );
+    assert!(!results.is_empty(), "expected to find 'hello' in subtitles");
     // "Hello, world!" should match.
     assert!(
         results[0].text.to_lowercase().contains("hello"),

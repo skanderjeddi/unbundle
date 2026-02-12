@@ -67,7 +67,11 @@ fn packet_iterator_has_consistent_stream_indices() {
         count
     };
 
-    for pkt in unbundler.packet_iter().expect("packet_iter").filter_map(|r| r.ok()) {
+    for pkt in unbundler
+        .packet_iter()
+        .expect("packet_iter")
+        .filter_map(|r| r.ok())
+    {
         assert!(
             pkt.stream_index < stream_count,
             "stream_index {} out of range (count {})",

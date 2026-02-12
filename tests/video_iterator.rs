@@ -61,7 +61,10 @@ fn frame_iter_yields_correct_frame_numbers() {
 
     // Frame numbers should be sorted.
     for window in frame_numbers.windows(2) {
-        assert!(window[1] >= window[0], "Frame numbers should be non-decreasing");
+        assert!(
+            window[1] >= window[0],
+            "Frame numbers should be non-decreasing"
+        );
     }
 }
 
@@ -110,7 +113,10 @@ fn frame_iter_early_exit() {
         }
     }
 
-    assert_eq!(count, 3, "Should have yielded exactly 3 frames before break");
+    assert_eq!(
+        count, 3,
+        "Should have yielded exactly 3 frames before break"
+    );
 }
 
 // ── with_config variant ────────────────────────────────────────────
@@ -167,7 +173,8 @@ fn frame_iter_matches_frames_count() {
     let iter_count = iter.filter(|r| r.is_ok()).count();
 
     assert_eq!(
-        collected.len(), iter_count,
+        collected.len(),
+        iter_count,
         "frame_iter and frames() should produce same count",
     );
 }
@@ -206,5 +213,8 @@ fn frame_iter_video_only_file() {
         .expect("Failed to create iterator");
 
     let results: Vec<_> = iter.collect();
-    assert!(!results.is_empty(), "Should decode frames from video-only file");
+    assert!(
+        !results.is_empty(),
+        "Should decode frames from video-only file"
+    );
 }

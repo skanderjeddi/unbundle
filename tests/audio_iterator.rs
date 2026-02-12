@@ -37,7 +37,12 @@ fn sample_iter_has_metadata() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("open");
-    for chunk in unbundler.audio().sample_iter().expect("sample_iter").filter_map(|r| r.ok()) {
+    for chunk in unbundler
+        .audio()
+        .sample_iter()
+        .expect("sample_iter")
+        .filter_map(|r| r.ok())
+    {
         assert!(chunk.sample_rate > 0);
         assert!(!chunk.samples.is_empty());
         // Timestamps should generally be non-negative (Duration is always >= 0).

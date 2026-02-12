@@ -44,7 +44,11 @@ fn frame_and_metadata_first_frame_is_keyframe() {
         .expect("Failed to extract frame 0");
 
     assert!(info.is_keyframe, "First frame should be a keyframe");
-    assert_eq!(info.frame_type, FrameType::I, "First frame should be an I-frame");
+    assert_eq!(
+        info.frame_type,
+        FrameType::I,
+        "First frame should be an I-frame"
+    );
 }
 
 #[test]
@@ -84,10 +88,7 @@ fn frame_and_metadata_has_pts() {
         .expect("Failed to extract frame 0");
 
     // The first frame should have a PTS.
-    assert!(
-        info.pts.is_some(),
-        "Expected PTS to be present for frame 0"
-    );
+    assert!(info.pts.is_some(), "Expected PTS to be present for frame 0");
 }
 
 #[test]

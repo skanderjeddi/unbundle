@@ -35,7 +35,10 @@
 //! # Ok::<(), UnbundleError>(())
 //! ```
 
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
 /// The kind of operation currently in progress.
@@ -194,11 +197,7 @@ impl ProgressTracker {
 
     /// Record one completed item and fire the callback if the batch
     /// threshold is reached.
-    pub(crate) fn advance(
-        &mut self,
-        frame_number: Option<u64>,
-        timestamp: Option<Duration>,
-    ) {
+    pub(crate) fn advance(&mut self, frame_number: Option<u64>, timestamp: Option<Duration>) {
         self.current += 1;
         self.items_since_last_report += 1;
 

@@ -147,7 +147,10 @@ impl VideoEncoder {
     ) -> Result<(), UnbundleError> {
         log::info!(
             "Writing {} frames to {:?} (codec={:?}, fps={})",
-            frames.len(), path.as_ref(), self.config.codec, self.config.fps,
+            frames.len(),
+            path.as_ref(),
+            self.config.codec,
+            self.config.fps,
         );
         if frames.is_empty() {
             return Err(UnbundleError::VideoWriteError(
@@ -173,27 +176,25 @@ impl VideoEncoder {
         let needs_global_header = output.format().flags().contains(FormatFlags::GLOBAL_HEADER);
 
         // Find encoder.
-        let encoder_codec = ffmpeg_next::encoder::find(codec_id)
-            .ok_or_else(|| {
-                UnbundleError::VideoEncodeError(format!("codec {codec_id:?} not available"))
-            })?;
+        let encoder_codec = ffmpeg_next::encoder::find(codec_id).ok_or_else(|| {
+            UnbundleError::VideoEncodeError(format!("codec {codec_id:?} not available"))
+        })?;
 
         // Add video stream.
-        let mut stream = output.add_stream(encoder_codec)
+        let mut stream = output
+            .add_stream(encoder_codec)
             .map_err(|e| UnbundleError::VideoWriteError(format!("cannot add stream: {e}")))?;
 
         let stream_index = stream.index();
 
         // Configure encoder context from the stream's codec parameters.
         let mut encoder = {
-            let ctx = CodecContext::from_parameters(stream.parameters())
-                .map_err(|e| {
-                    UnbundleError::VideoEncodeError(format!("cannot create codec context: {e}"))
-                })?;
-            ctx.encoder().video()
-                .map_err(|e| {
-                    UnbundleError::VideoEncodeError(format!("cannot open video encoder: {e}"))
-                })?
+            let ctx = CodecContext::from_parameters(stream.parameters()).map_err(|e| {
+                UnbundleError::VideoEncodeError(format!("cannot create codec context: {e}"))
+            })?;
+            ctx.encoder().video().map_err(|e| {
+                UnbundleError::VideoEncodeError(format!("cannot open video encoder: {e}"))
+            })?
         };
 
         encoder.set_width(width);
@@ -209,20 +210,21 @@ impl VideoEncoder {
         // Set global header flag if the format requires it.
         if needs_global_header {
             unsafe {
-                (*encoder.as_mut_ptr()).flags |= ffmpeg_sys_next::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
+                (*encoder.as_mut_ptr()).flags |=
+                    ffmpeg_sys_next::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
             }
         }
 
-        let mut opened_encoder = encoder.open_as(encoder_codec)
-            .map_err(|e| {
-                UnbundleError::VideoEncodeError(format!("cannot open encoder: {e}"))
-            })?;
+        let mut opened_encoder = encoder
+            .open_as(encoder_codec)
+            .map_err(|e| UnbundleError::VideoEncodeError(format!("cannot open encoder: {e}")))?;
 
         // Copy encoder parameters back to the stream.
         stream.set_parameters(&opened_encoder);
 
         // Write file header.
-        output.write_header()
+        output
+            .write_header()
             .map_err(|e| UnbundleError::VideoWriteError(format!("cannot write header: {e}")))?;
 
         // Set up scaler from RGB24 → target pixel format.
@@ -235,9 +237,7 @@ impl VideoEncoder {
             height,
             ScalingFlags::BILINEAR,
         )
-        .map_err(|e| {
-            UnbundleError::VideoWriteError(format!("cannot create scaler: {e}"))
-        })?;
+        .map_err(|e| UnbundleError::VideoWriteError(format!("cannot create scaler: {e}")))?;
 
         let mut frame_index: i64 = 0;
 
@@ -265,19 +265,17 @@ impl VideoEncoder {
 
             // Scale to target pixel format.
             let mut dst_frame = VideoFrame::empty();
-            scaler.run(&src_frame, &mut dst_frame)
-                .map_err(|e| {
-                    UnbundleError::VideoWriteError(format!("scaling failed: {e}"))
-                })?;
+            scaler
+                .run(&src_frame, &mut dst_frame)
+                .map_err(|e| UnbundleError::VideoWriteError(format!("scaling failed: {e}")))?;
 
             dst_frame.set_pts(Some(frame_index));
             frame_index += 1;
 
             // Send frame to encoder.
-            opened_encoder.send_frame(&dst_frame)
-                .map_err(|e| {
-                    UnbundleError::VideoEncodeError(format!("send_frame failed: {e}"))
-                })?;
+            opened_encoder
+                .send_frame(&dst_frame)
+                .map_err(|e| UnbundleError::VideoEncodeError(format!("send_frame failed: {e}")))?;
 
             // Receive and write encoded packets.
             let mut packet = Packet::empty();
@@ -287,18 +285,16 @@ impl VideoEncoder {
                     Rational::new(1, self.config.fps as i32),
                     output.stream(stream_index).unwrap().time_base(),
                 );
-                packet.write_interleaved(&mut output)
-                    .map_err(|e| {
-                        UnbundleError::VideoWriteError(format!("write packet failed: {e}"))
-                    })?;
+                packet.write_interleaved(&mut output).map_err(|e| {
+                    UnbundleError::VideoWriteError(format!("write packet failed: {e}"))
+                })?;
             }
         }
 
         // Flush encoder.
-        opened_encoder.send_eof()
-            .map_err(|e| {
-                UnbundleError::VideoEncodeError(format!("send_eof failed: {e}"))
-            })?;
+        opened_encoder
+            .send_eof()
+            .map_err(|e| UnbundleError::VideoEncodeError(format!("send_eof failed: {e}")))?;
 
         let mut packet = Packet::empty();
         while opened_encoder.receive_packet(&mut packet).is_ok() {
@@ -307,14 +303,14 @@ impl VideoEncoder {
                 Rational::new(1, self.config.fps as i32),
                 output.stream(stream_index).unwrap().time_base(),
             );
-            packet.write_interleaved(&mut output)
-                .map_err(|e| {
-                    UnbundleError::VideoWriteError(format!("write flush packet failed: {e}"))
-                })?;
+            packet.write_interleaved(&mut output).map_err(|e| {
+                UnbundleError::VideoWriteError(format!("write flush packet failed: {e}"))
+            })?;
         }
 
         // Write trailer.
-        output.write_trailer()
+        output
+            .write_trailer()
             .map_err(|e| UnbundleError::VideoWriteError(format!("cannot write trailer: {e}")))?;
 
         Ok(())

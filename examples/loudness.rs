@@ -7,12 +7,16 @@ use unbundle::{MediaFile, UnbundleError};
 
 #[cfg(not(feature = "loudness"))]
 fn main() {
-    eprintln!("This example requires the `loudness` feature: cargo run --features loudness --example loudness -- <video_path>");
+    eprintln!(
+        "This example requires the `loudness` feature: cargo run --features loudness --example loudness -- <video_path>"
+    );
 }
 
 #[cfg(feature = "loudness")]
 fn main() -> Result<(), UnbundleError> {
-    let path = std::env::args().nth(1).expect("Usage: loudness <video_path>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("Usage: loudness <video_path>");
 
     let mut unbundler = MediaFile::open(&path)?;
     let info = unbundler.audio().analyze_loudness()?;

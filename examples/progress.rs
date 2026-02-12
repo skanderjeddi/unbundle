@@ -7,8 +7,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use unbundle::{
-    CancellationToken, ExtractOptions, FrameRange, MediaFile,
-    ProgressCallback, ProgressInfo,
+    CancellationToken, ExtractOptions, FrameRange, MediaFile, ProgressCallback, ProgressInfo,
 };
 
 /// Simple progress callback that prints to stdout.
@@ -16,7 +15,9 @@ struct PrintProgress;
 
 impl ProgressCallback for PrintProgress {
     fn on_progress(&self, info: &ProgressInfo) {
-        let pct = info.percentage.map_or("??".to_string(), |p| format!("{p:.1}"));
+        let pct = info
+            .percentage
+            .map_or("??".to_string(), |p| format!("{p:.1}"));
         let remaining = info
             .estimated_remaining
             .map_or("???".to_string(), |r| format!("{:.1}s", r.as_secs_f64()));
@@ -51,8 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ── Cancellation token ─────────────────────────────────────────
     println!("Demonstrating cancellation...");
     let token = CancellationToken::new();
-    let cancel_config = ExtractOptions::new()
-        .with_cancellation(token.clone());
+    let cancel_config = ExtractOptions::new().with_cancellation(token.clone());
 
     // Cancel immediately to demonstrate the mechanism.
     token.cancel();

@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use ffmpeg_next::{frame::Video as VideoFrame, Rational};
+use ffmpeg_next::{Rational, frame::Video as VideoFrame};
 
 /// Copy pixel data from an FFmpeg video frame into a tightly-packed buffer.
 ///
@@ -43,17 +43,6 @@ pub fn duration_to_stream_timestamp(duration: Duration, time_base: Rational) -> 
     (seconds * denominator / numerator) as i64
 }
 
-/// Convert a frame number to a timestamp in the stream's time base.
-pub fn frame_number_to_stream_timestamp(
-    frame_number: u64,
-    frames_per_second: f64,
-    time_base: Rational,
-) -> i64 {
-    let seconds = frame_number as f64 / frames_per_second;
-    let duration = Duration::from_secs_f64(seconds);
-    duration_to_stream_timestamp(duration, time_base)
-}
-
 /// Convert a [`Duration`] to a frame number using the video's frame rate.
 pub fn timestamp_to_frame_number(timestamp: Duration, frames_per_second: f64) -> u64 {
     (timestamp.as_secs_f64() * frames_per_second) as u64
@@ -68,4 +57,24 @@ pub fn pts_to_seconds(pts: i64, time_base: Rational) -> f64 {
 pub fn pts_to_frame_number(pts: i64, time_base: Rational, frames_per_second: f64) -> u64 {
     let seconds = pts_to_seconds(pts, time_base);
     (seconds * frames_per_second) as u64
+}
+
+/// Convert a frame number to a seek timestamp in AV_TIME_BASE (microseconds).
+///
+/// `input_context.seek()` (via `avformat_seek_file` with `stream_index = -1`)
+/// expects timestamps in AV_TIME_BASE (1/1_000_000). This helper computes the
+/// frame's time in seconds and converts directly to microseconds, bypassing
+/// the stream time base entirely.
+pub fn frame_number_to_seek_timestamp(frame_number: u64, frames_per_second: f64) -> i64 {
+    let seconds = frame_number as f64 / frames_per_second;
+    (seconds * 1_000_000.0) as i64
+}
+
+/// Convert a [`Duration`] to a seek timestamp in AV_TIME_BASE (microseconds).
+///
+/// `input_context.seek()` (via `avformat_seek_file` with `stream_index = -1`)
+/// expects timestamps in AV_TIME_BASE (1/1_000_000). This is the correct
+/// conversion for container-level seeking.
+pub fn duration_to_seek_timestamp(duration: Duration) -> i64 {
+    duration.as_micros() as i64
 }

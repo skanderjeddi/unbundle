@@ -10,8 +10,8 @@
 
 use std::path::{Path, PathBuf};
 
-use image::DynamicImage;
 use ::rayon::iter::{IntoParallelIterator, ParallelIterator};
+use image::DynamicImage;
 
 use crate::configuration::ExtractOptions;
 use crate::error::UnbundleError;
@@ -58,8 +58,7 @@ pub(crate) fn parallel_extract_frames(
         })
         .collect();
 
-    let mut all_frames: Vec<(u64, DynamicImage)> =
-        results?.into_iter().flatten().collect();
+    let mut all_frames: Vec<(u64, DynamicImage)> = results?.into_iter().flatten().collect();
     all_frames.sort_by_key(|(num, _)| *num);
     Ok(all_frames)
 }

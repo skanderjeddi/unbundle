@@ -63,7 +63,10 @@ pub(crate) fn analyze_group_of_pictures_impl(
     unbundler: &mut MediaFile,
     video_stream_index: usize,
 ) -> Result<GroupOfPicturesInfo, UnbundleError> {
-    log::debug!("Analyzing Group of Pictures structure (stream={})", video_stream_index);
+    log::debug!(
+        "Analyzing Group of Pictures structure (stream={})",
+        video_stream_index
+    );
     let time_base: Rational = unbundler
         .input_context
         .stream(video_stream_index)
@@ -84,8 +87,7 @@ pub(crate) fn analyze_group_of_pictures_impl(
                 if packet.is_key() {
                     let pts = packet.pts();
                     let timestamp = pts.map(|p| {
-                        let secs = p as f64
-                            * time_base.numerator() as f64
+                        let secs = p as f64 * time_base.numerator() as f64
                             / time_base.denominator().max(1) as f64;
                         Duration::from_secs_f64(secs.max(0.0))
                     });

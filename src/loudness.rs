@@ -71,9 +71,7 @@ pub(crate) fn analyze_loudness_impl(
         ChannelLayout::MONO,
         sample_rate,
     )
-    .map_err(|e| {
-        UnbundleError::LoudnessError(format!("Failed to create resampler: {e}"))
-    })?;
+    .map_err(|e| UnbundleError::LoudnessError(format!("Failed to create resampler: {e}")))?;
 
     let mut peak: f32 = 0.0;
     let mut sum_sq: f64 = 0.0;
@@ -86,20 +84,19 @@ pub(crate) fn analyze_loudness_impl(
             continue;
         }
 
-        decoder.send_packet(&packet).map_err(|e| {
-            UnbundleError::LoudnessError(format!("Audio decode error: {e}"))
-        })?;
+        decoder
+            .send_packet(&packet)
+            .map_err(|e| UnbundleError::LoudnessError(format!("Audio decode error: {e}")))?;
 
         while decoder.receive_frame(&mut decoded_frame).is_ok() {
-            let _ = resampler.run(&decoded_frame, &mut resampled_frame).map_err(|e| {
-                UnbundleError::LoudnessError(format!("Resample error: {e}"))
-            })?;
+            let _ = resampler
+                .run(&decoded_frame, &mut resampled_frame)
+                .map_err(|e| UnbundleError::LoudnessError(format!("Resample error: {e}")))?;
 
             let data = resampled_frame.data(0);
             let sample_count = resampled_frame.samples();
-            let float_samples: &[f32] = unsafe {
-                std::slice::from_raw_parts(data.as_ptr() as *const f32, sample_count)
-            };
+            let float_samples: &[f32] =
+                unsafe { std::slice::from_raw_parts(data.as_ptr() as *const f32, sample_count) };
 
             for &s in float_samples {
                 let abs = s.abs();

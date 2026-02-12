@@ -40,7 +40,10 @@ fn waveform_custom_bins() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("open");
-    let config = WaveformOptions { bins: 50, ..Default::default() };
+    let config = WaveformOptions {
+        bins: 50,
+        ..Default::default()
+    };
     let waveform = unbundler
         .audio()
         .generate_waveform(&config)
@@ -63,9 +66,21 @@ fn waveform_bins_in_range() {
         .expect("waveform");
 
     for bin in &waveform.bins {
-        assert!(bin.min >= -1.0 && bin.min <= 1.0, "min out of range: {}", bin.min);
-        assert!(bin.max >= -1.0 && bin.max <= 1.0, "max out of range: {}", bin.max);
-        assert!(bin.rms >= 0.0 && bin.rms <= 1.0, "rms out of range: {}", bin.rms);
+        assert!(
+            bin.min >= -1.0 && bin.min <= 1.0,
+            "min out of range: {}",
+            bin.min
+        );
+        assert!(
+            bin.max >= -1.0 && bin.max <= 1.0,
+            "max out of range: {}",
+            bin.max
+        );
+        assert!(
+            bin.rms >= 0.0 && bin.rms <= 1.0,
+            "rms out of range: {}",
+            bin.rms
+        );
         assert!(bin.min <= bin.max, "min should be <= max");
     }
 }

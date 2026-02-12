@@ -3,16 +3,22 @@
 //! Usage: `cargo run --features encode --example video_encoder -- path/to/video.mp4`
 
 #[cfg(feature = "encode")]
-use unbundle::{FrameRange, MediaFile, UnbundleError, VideoCodec, VideoEncoder, VideoEncoderOptions};
+use unbundle::{
+    FrameRange, MediaFile, UnbundleError, VideoCodec, VideoEncoder, VideoEncoderOptions,
+};
 
 #[cfg(not(feature = "encode"))]
 fn main() {
-    eprintln!("This example requires the `encode` feature: cargo run --features encode --example video_encoder -- <video_path>");
+    eprintln!(
+        "This example requires the `encode` feature: cargo run --features encode --example video_encoder -- <video_path>"
+    );
 }
 
 #[cfg(feature = "encode")]
 fn main() -> Result<(), UnbundleError> {
-    let path = std::env::args().nth(1).expect("Usage: video_encoder <video_path>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("Usage: video_encoder <video_path>");
 
     let mut unbundler = MediaFile::open(&path)?;
 
@@ -38,9 +44,7 @@ fn main() -> Result<(), UnbundleError> {
 
     VideoEncoder::new(config).write(output, &frames)?;
 
-    let size = std::fs::metadata(output)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let size = std::fs::metadata(output).map(|m| m.len()).unwrap_or(0);
     println!("Wrote {output} ({size} bytes)");
     std::fs::remove_file(output).ok();
 

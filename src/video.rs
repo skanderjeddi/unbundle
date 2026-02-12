@@ -9,32 +9,32 @@ use std::path::Path;
 use std::time::Duration;
 
 use ffmpeg_next::{
+    Rational,
     codec::context::Context as CodecContext,
     decoder::Video as VideoDecoder,
     format::Pixel,
     frame::Video as VideoFrame,
-    Rational,
     software::scaling::{Context as ScalingContext, Flags as ScalingFlags},
     util::picture::Type as PictureType,
 };
 use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 
+#[cfg(feature = "gif")]
+use crate::gif::GifOptions;
+use crate::keyframe::{GroupOfPicturesInfo, KeyFrameMetadata};
+#[cfg(feature = "scene")]
+use crate::scene::{SceneChange, SceneDetectionOptions};
+#[cfg(feature = "async")]
+use crate::stream::FrameStream;
+use crate::variable_framerate::VariableFrameRateAnalysis;
 use crate::{
     configuration::{ExtractOptions, FrameOutputOptions, PixelFormat},
     error::UnbundleError,
-    video_iterator::FrameIterator,
     metadata::VideoMetadata,
     progress::{OperationType, ProgressTracker},
     unbundle::MediaFile,
+    video_iterator::FrameIterator,
 };
-#[cfg(feature = "async")]
-use crate::stream::FrameStream;
-#[cfg(feature = "gif")]
-use crate::gif::GifOptions;
-#[cfg(feature = "scene")]
-use crate::scene::{SceneChange, SceneDetectionOptions};
-use crate::keyframe::{GroupOfPicturesInfo, KeyFrameMetadata};
-use crate::variable_framerate::VariableFrameRateAnalysis;
 
 /// The type of a decoded video frame (I, P, B, etc.).
 ///
@@ -249,7 +249,12 @@ impl<'a> VideoHandle<'a> {
             return Err(UnbundleError::Cancelled);
         }
 
-        log::debug!("Extracting frame {} (fps={:.2}, stream={})", frame_number, frames_per_second, video_stream_index);
+        log::debug!(
+            "Extracting frame {} (fps={:.2}, stream={})",
+            frame_number,
+            frames_per_second,
+            video_stream_index
+        );
         let stream = self
             .unbundler
             .input_context
@@ -272,16 +277,14 @@ impl<'a> VideoHandle<'a> {
         )?;
 
         // Seek to the nearest keyframe before the target frame.
-        let target_timestamp = crate::conversion::frame_number_to_stream_timestamp(
-            frame_number,
-            frames_per_second,
-            time_base,
-        );
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(frame_number, frames_per_second);
 
-        // Seek in the stream's time base.
+        // Seek in AV_TIME_BASE (microseconds) since input_context.seek()
+        // calls avformat_seek_file with stream_index = -1.
         self.unbundler
             .input_context
-            .seek(target_timestamp, ..target_timestamp)?;
+            .seek(seek_timestamp, ..seek_timestamp)?;
 
         // Decode frames until we reach the target.
         let mut decoded_frame = VideoFrame::empty();
@@ -522,15 +525,12 @@ impl<'a> VideoHandle<'a> {
             ScalingFlags::BILINEAR,
         )?;
 
-        let target_timestamp = crate::conversion::frame_number_to_stream_timestamp(
-            frame_number,
-            frames_per_second,
-            time_base,
-        );
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(frame_number, frames_per_second);
 
         self.unbundler
             .input_context
-            .seek(target_timestamp, ..target_timestamp)?;
+            .seek(seek_timestamp, ..seek_timestamp)?;
 
         let mut decoded_frame = VideoFrame::empty();
         let mut rgb_frame = VideoFrame::empty();
@@ -548,11 +548,7 @@ impl<'a> VideoHandle<'a> {
                     crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 if current_frame_number >= frame_number {
-                    let info = build_frame_info(
-                        &decoded_frame,
-                        current_frame_number,
-                        time_base,
-                    );
+                    let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
                     scaler.run(&decoded_frame, &mut rgb_frame)?;
                     let image = convert_frame_to_image(
                         &rgb_frame,
@@ -572,11 +568,7 @@ impl<'a> VideoHandle<'a> {
                 crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
             if current_frame_number >= frame_number {
-                let info = build_frame_info(
-                    &decoded_frame,
-                    current_frame_number,
-                    time_base,
-                );
+                let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
                 scaler.run(&decoded_frame, &mut rgb_frame)?;
                 let image = convert_frame_to_image(
                     &rgb_frame,
@@ -643,11 +635,8 @@ impl<'a> VideoHandle<'a> {
             .ok_or(UnbundleError::NoVideoStream)?
             .clone();
 
-        let total = Self::estimate_frame_count(
-            &range,
-            &video_metadata,
-            self.unbundler.metadata.duration,
-        );
+        let total =
+            Self::estimate_frame_count(&range, &video_metadata, self.unbundler.metadata.duration);
 
         let mut tracker = ProgressTracker::new(
             config.progress.clone(),
@@ -784,11 +773,7 @@ impl<'a> VideoHandle<'a> {
     /// )?;
     /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn for_each_frame<F>(
-        &mut self,
-        range: FrameRange,
-        callback: F,
-    ) -> Result<(), UnbundleError>
+    pub fn for_each_frame<F>(&mut self, range: FrameRange, callback: F) -> Result<(), UnbundleError>
     where
         F: FnMut(u64, DynamicImage) -> Result<(), UnbundleError>,
     {
@@ -841,7 +826,8 @@ impl<'a> VideoHandle<'a> {
             .ok_or(UnbundleError::NoVideoStream)?
             .clone();
 
-        let total = Self::estimate_frame_count(&range, &video_metadata, self.unbundler.metadata.duration);
+        let total =
+            Self::estimate_frame_count(&range, &video_metadata, self.unbundler.metadata.duration);
 
         let mut tracker = ProgressTracker::new(
             config.progress.clone(),
@@ -909,7 +895,8 @@ impl<'a> VideoHandle<'a> {
             .ok_or(UnbundleError::NoVideoStream)?
             .clone();
 
-        let total = Self::estimate_frame_count(&range, &video_metadata, self.unbundler.metadata.duration);
+        let total =
+            Self::estimate_frame_count(&range, &video_metadata, self.unbundler.metadata.duration);
 
         let mut tracker = ProgressTracker::new(
             config.progress.clone(),
@@ -967,7 +954,13 @@ impl<'a> VideoHandle<'a> {
             .clone();
 
         let scd_config = config.unwrap_or_default();
-        crate::scene::detect_scenes_impl(self.unbundler, &video_metadata, &scd_config, None, self.stream_index)
+        crate::scene::detect_scenes_impl(
+            self.unbundler,
+            &video_metadata,
+            &scd_config,
+            None,
+            self.stream_index,
+        )
     }
 
     /// Detect scene changes with cancellation support.
@@ -1098,9 +1091,7 @@ impl<'a> VideoHandle<'a> {
     /// );
     /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn analyze_group_of_pictures(
-        &mut self,
-    ) -> Result<GroupOfPicturesInfo, UnbundleError> {
+    pub fn analyze_group_of_pictures(&mut self) -> Result<GroupOfPicturesInfo, UnbundleError> {
         let video_stream_index = self.resolve_video_stream_index()?;
         crate::keyframe::analyze_group_of_pictures_impl(self.unbundler, video_stream_index)
     }
@@ -1138,9 +1129,14 @@ impl<'a> VideoHandle<'a> {
     /// println!("VFR: {}, mean FPS: {:.2}", vfr.is_vfr, vfr.mean_fps);
     /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn analyze_variable_framerate(&mut self) -> Result<VariableFrameRateAnalysis, UnbundleError> {
+    pub fn analyze_variable_framerate(
+        &mut self,
+    ) -> Result<VariableFrameRateAnalysis, UnbundleError> {
         let video_stream_index = self.resolve_video_stream_index()?;
-        crate::variable_framerate::analyze_variable_framerate_impl(self.unbundler, video_stream_index)
+        crate::variable_framerate::analyze_variable_framerate_impl(
+            self.unbundler,
+            video_stream_index,
+        )
     }
 
     /// Create an async stream of decoded video frames.
@@ -1229,10 +1225,7 @@ impl<'a> VideoHandle<'a> {
     /// }
     /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn frame_iter(
-        self,
-        range: FrameRange,
-    ) -> Result<FrameIterator<'a>, UnbundleError> {
+    pub fn frame_iter(self, range: FrameRange) -> Result<FrameIterator<'a>, UnbundleError> {
         let video_metadata = self
             .unbundler
             .metadata
@@ -1244,7 +1237,12 @@ impl<'a> VideoHandle<'a> {
         let frame_numbers = self.resolve_frame_numbers_for_iter(range, &video_metadata)?;
         let output_config = FrameOutputOptions::default();
 
-        FrameIterator::new(self.unbundler, frame_numbers, output_config, self.stream_index)
+        FrameIterator::new(
+            self.unbundler,
+            frame_numbers,
+            output_config,
+            self.stream_index,
+        )
     }
 
     /// Create a lazy iterator with custom output configuration.
@@ -1269,7 +1267,12 @@ impl<'a> VideoHandle<'a> {
             .clone();
 
         let frame_numbers = self.resolve_frame_numbers_for_iter(range, &video_metadata)?;
-        FrameIterator::new(self.unbundler, frame_numbers, output_config, self.stream_index)
+        FrameIterator::new(
+            self.unbundler,
+            frame_numbers,
+            output_config,
+            self.stream_index,
+        )
     }
 
     /// Resolve a [`FrameRange`] into sorted, deduplicated frame numbers.
@@ -1333,9 +1336,7 @@ impl<'a> VideoHandle<'a> {
                 nums
             }
             FrameRange::Specific(nums) => nums,
-            FrameRange::Segments(segments) => {
-                Self::resolve_segments(&segments, video_metadata)?
-            }
+            FrameRange::Segments(segments) => Self::resolve_segments(&segments, video_metadata)?,
         };
         numbers.sort_unstable();
         numbers.dedup();
@@ -1448,10 +1449,8 @@ impl<'a> VideoHandle<'a> {
             }
             FrameRange::TimeRange(start_time, end_time) => {
                 let fps = video_metadata.frames_per_second;
-                let start_frame =
-                    crate::conversion::timestamp_to_frame_number(*start_time, fps);
-                let end_frame =
-                    crate::conversion::timestamp_to_frame_number(*end_time, fps);
+                let start_frame = crate::conversion::timestamp_to_frame_number(*start_time, fps);
+                let end_frame = crate::conversion::timestamp_to_frame_number(*end_time, fps);
                 Some(end_frame.saturating_sub(start_frame) + 1)
             }
             FrameRange::TimeInterval(interval) => {
@@ -1465,11 +1464,14 @@ impl<'a> VideoHandle<'a> {
             FrameRange::Specific(numbers) => Some(numbers.len() as u64),
             FrameRange::Segments(segments) => {
                 let fps = video_metadata.frames_per_second;
-                let total: u64 = segments.iter().map(|(start, end)| {
-                    let sf = crate::conversion::timestamp_to_frame_number(*start, fps);
-                    let ef = crate::conversion::timestamp_to_frame_number(*end, fps);
-                    ef.saturating_sub(sf) + 1
-                }).sum();
+                let total: u64 = segments
+                    .iter()
+                    .map(|(start, end)| {
+                        let sf = crate::conversion::timestamp_to_frame_number(*start, fps);
+                        let ef = crate::conversion::timestamp_to_frame_number(*end, fps);
+                        ef.saturating_sub(sf) + 1
+                    })
+                    .sum();
                 Some(total)
             }
         }
@@ -1576,12 +1578,7 @@ impl<'a> VideoHandle<'a> {
                 }
                 let total = video_metadata.frame_count;
                 let numbers: Vec<u64> = (0..total).step_by(step as usize).collect();
-                self.process_specific_frames_and_metadata(
-                    &numbers,
-                    video_metadata,
-                    config,
-                    handler,
-                )
+                self.process_specific_frames_and_metadata(&numbers, video_metadata, config, handler)
             }
             FrameRange::TimeRange(start_time, end_time) => {
                 if start_time >= end_time {
@@ -1620,29 +1617,14 @@ impl<'a> VideoHandle<'a> {
                     ));
                     current += interval;
                 }
-                self.process_specific_frames_and_metadata(
-                    &numbers,
-                    video_metadata,
-                    config,
-                    handler,
-                )
+                self.process_specific_frames_and_metadata(&numbers, video_metadata, config, handler)
             }
             FrameRange::Specific(numbers) => {
-                self.process_specific_frames_and_metadata(
-                    &numbers,
-                    video_metadata,
-                    config,
-                    handler,
-                )
+                self.process_specific_frames_and_metadata(&numbers, video_metadata, config, handler)
             }
             FrameRange::Segments(segments) => {
                 let numbers = Self::resolve_segments(&segments, video_metadata)?;
-                self.process_specific_frames_and_metadata(
-                    &numbers,
-                    video_metadata,
-                    config,
-                    handler,
-                )
+                self.process_specific_frames_and_metadata(&numbers, video_metadata, config, handler)
             }
         }
     }
@@ -1692,11 +1674,11 @@ impl<'a> VideoHandle<'a> {
             )?)
         };
 
-        let start_timestamp =
-            crate::conversion::frame_number_to_stream_timestamp(start, frames_per_second, time_base);
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(start, frames_per_second);
         self.unbundler
             .input_context
-            .seek(start_timestamp, ..start_timestamp)?;
+            .seek(seek_timestamp, ..seek_timestamp)?;
 
         let mut decoded_frame = VideoFrame::empty();
         let mut scaled_frame = VideoFrame::empty();
@@ -1721,7 +1703,11 @@ impl<'a> VideoHandle<'a> {
                     let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
-                        &mut scaler, source, output_pixel, target_width, target_height,
+                        &mut scaler,
+                        source,
+                        output_pixel,
+                        target_width,
+                        target_height,
                     )?;
                     scaler.as_mut().unwrap().run(source, &mut scaled_frame)?;
                     let image = convert_frame_to_image(
@@ -1753,7 +1739,11 @@ impl<'a> VideoHandle<'a> {
                 let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
                 let source = transferred.as_ref().unwrap_or(&decoded_frame);
                 ensure_scaler(
-                    &mut scaler, source, output_pixel, target_width, target_height,
+                    &mut scaler,
+                    source,
+                    output_pixel,
+                    target_width,
+                    target_height,
                 )?;
                 scaler.as_mut().unwrap().run(source, &mut scaled_frame)?;
                 let image = convert_frame_to_image(
@@ -1825,14 +1815,11 @@ impl<'a> VideoHandle<'a> {
             )?)
         };
 
-        let first_timestamp = crate::conversion::frame_number_to_stream_timestamp(
-            sorted_numbers[0],
-            frames_per_second,
-            time_base,
-        );
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(sorted_numbers[0], frames_per_second);
         self.unbundler
             .input_context
-            .seek(first_timestamp, ..first_timestamp)?;
+            .seek(seek_timestamp, ..seek_timestamp)?;
 
         let mut target_index = 0;
         let mut decoded_frame = VideoFrame::empty();
@@ -1869,15 +1856,15 @@ impl<'a> VideoHandle<'a> {
                 if target_index < sorted_numbers.len()
                     && current_frame_number == sorted_numbers[target_index]
                 {
-                    let info = build_frame_info(
-                        &decoded_frame,
-                        current_frame_number,
-                        time_base,
-                    );
+                    let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
                     let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
-                        &mut scaler, source, output_pixel, target_width, target_height,
+                        &mut scaler,
+                        source,
+                        output_pixel,
+                        target_width,
+                        target_height,
                     )?;
                     scaler.as_mut().unwrap().run(source, &mut scaled_frame)?;
                     let image = convert_frame_to_image(
@@ -1915,15 +1902,15 @@ impl<'a> VideoHandle<'a> {
                 if target_index < sorted_numbers.len()
                     && current_frame_number == sorted_numbers[target_index]
                 {
-                    let info = build_frame_info(
-                        &decoded_frame,
-                        current_frame_number,
-                        time_base,
-                    );
+                    let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
                     let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
-                        &mut scaler, source, output_pixel, target_width, target_height,
+                        &mut scaler,
+                        source,
+                        output_pixel,
+                        target_width,
+                        target_height,
                     )?;
                     scaler.as_mut().unwrap().run(source, &mut scaled_frame)?;
                     let image = convert_frame_to_image(
@@ -1954,7 +1941,12 @@ impl<'a> VideoHandle<'a> {
         F: FnMut(u64, DynamicImage) -> Result<(), UnbundleError>,
     {
         let video_stream_index = self.resolve_video_stream_index()?;
-        log::debug!("Processing frame range {}..={} (stream={})", start, end, video_stream_index);
+        log::debug!(
+            "Processing frame range {}..={} (stream={})",
+            start,
+            end,
+            video_stream_index
+        );
 
         let (target_width, target_height) = config
             .frame_output
@@ -1989,11 +1981,11 @@ impl<'a> VideoHandle<'a> {
         };
 
         // Seek to start frame.
-        let start_timestamp =
-            crate::conversion::frame_number_to_stream_timestamp(start, frames_per_second, time_base);
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(start, frames_per_second);
         self.unbundler
             .input_context
-            .seek(start_timestamp, ..start_timestamp)?;
+            .seek(seek_timestamp, ..seek_timestamp)?;
 
         let mut decoded_frame = VideoFrame::empty();
         let mut scaled_frame = VideoFrame::empty();
@@ -2018,7 +2010,11 @@ impl<'a> VideoHandle<'a> {
                     let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
-                        &mut scaler, source, output_pixel, target_width, target_height,
+                        &mut scaler,
+                        source,
+                        output_pixel,
+                        target_width,
+                        target_height,
                     )?;
                     scaler.as_mut().unwrap().run(source, &mut scaled_frame)?;
                     let image = convert_frame_to_image(
@@ -2051,7 +2047,11 @@ impl<'a> VideoHandle<'a> {
                 let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
                 let source = transferred.as_ref().unwrap_or(&decoded_frame);
                 ensure_scaler(
-                    &mut scaler, source, output_pixel, target_width, target_height,
+                    &mut scaler,
+                    source,
+                    output_pixel,
+                    target_width,
+                    target_height,
                 )?;
                 scaler.as_mut().unwrap().run(source, &mut scaled_frame)?;
                 let image = convert_frame_to_image(
@@ -2090,7 +2090,11 @@ impl<'a> VideoHandle<'a> {
         }
 
         let video_stream_index = self.resolve_video_stream_index()?;
-        log::debug!("Processing {} specific frames (stream={})", frame_numbers.len(), video_stream_index);
+        log::debug!(
+            "Processing {} specific frames (stream={})",
+            frame_numbers.len(),
+            video_stream_index
+        );
 
         let (target_width, target_height) = config
             .frame_output
@@ -2128,14 +2132,11 @@ impl<'a> VideoHandle<'a> {
         };
 
         // Seek to the first requested frame.
-        let first_timestamp = crate::conversion::frame_number_to_stream_timestamp(
-            sorted_numbers[0],
-            frames_per_second,
-            time_base,
-        );
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(sorted_numbers[0], frames_per_second);
         self.unbundler
             .input_context
-            .seek(first_timestamp, ..first_timestamp)?;
+            .seek(seek_timestamp, ..seek_timestamp)?;
 
         let mut target_index = 0;
         let mut decoded_frame = VideoFrame::empty();
@@ -2177,7 +2178,11 @@ impl<'a> VideoHandle<'a> {
                     let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
-                        &mut scaler, source, output_pixel, target_width, target_height,
+                        &mut scaler,
+                        source,
+                        output_pixel,
+                        target_width,
+                        target_height,
                     )?;
                     scaler.as_mut().unwrap().run(source, &mut scaled_frame)?;
                     let image = convert_frame_to_image(
@@ -2220,7 +2225,11 @@ impl<'a> VideoHandle<'a> {
                     let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
-                        &mut scaler, source, output_pixel, target_width, target_height,
+                        &mut scaler,
+                        source,
+                        output_pixel,
+                        target_width,
+                        target_height,
                     )?;
                     scaler.as_mut().unwrap().run(source, &mut scaled_frame)?;
                     let image = convert_frame_to_image(
@@ -2249,7 +2258,10 @@ fn create_video_decoder(
 ) -> Result<(VideoDecoder, bool), UnbundleError> {
     #[cfg(feature = "hardware")]
     {
-        let setup = crate::hardware_acceleration::try_create_hw_decoder(codec_context, config.hardware_acceleration)?;
+        let setup = crate::hardware_acceleration::try_create_hw_decoder(
+            codec_context,
+            config.hardware_acceleration,
+        )?;
         Ok((setup.decoder, setup.hw_active))
     }
     #[cfg(not(feature = "hardware"))]
@@ -2344,16 +2356,9 @@ fn convert_frame_to_image(
 }
 
 /// Build a [`FrameMetadata`] from a decoded video frame.
-fn build_frame_info(
-    frame: &VideoFrame,
-    frame_number: u64,
-    time_base: Rational,
-) -> FrameMetadata {
+fn build_frame_info(frame: &VideoFrame, frame_number: u64, time_base: Rational) -> FrameMetadata {
     let pts = frame.pts();
-    let timestamp_seconds = crate::conversion::pts_to_seconds(
-        pts.unwrap_or(0),
-        time_base,
-    );
+    let timestamp_seconds = crate::conversion::pts_to_seconds(pts.unwrap_or(0), time_base);
     let timestamp = Duration::from_secs_f64(timestamp_seconds.max(0.0));
 
     FrameMetadata {

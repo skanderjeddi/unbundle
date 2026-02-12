@@ -9,10 +9,7 @@ use std::{path::Path, time::Duration};
 
 use criterion::Criterion;
 use ffmpeg_next::util::log::Level as LogLevel;
-use unbundle::{
-    AudioFormat, ExtractOptions, FrameRange, MediaFile,
-    PixelFormat, Remuxer,
-};
+use unbundle::{AudioFormat, ExtractOptions, FrameRange, MediaFile, PixelFormat, Remuxer};
 
 #[cfg(feature = "hardware")]
 use unbundle::HardwareAccelerationMode;
@@ -88,7 +85,10 @@ fn benchmark_video_iterator(criterion: &mut Criterion) {
     criterion.bench_function("frame_iter 10 frames", |bencher| {
         bencher.iter(|| {
             let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-            let iter = unbundler.video().frame_iter(FrameRange::Range(0, 9)).unwrap();
+            let iter = unbundler
+                .video()
+                .frame_iter(FrameRange::Range(0, 9))
+                .unwrap();
             for result in iter {
                 let _ = result.unwrap();
             }
@@ -104,8 +104,7 @@ fn benchmark_pixel_formats(criterion: &mut Criterion) {
     criterion.bench_function("extract frame RGBA8", |bencher| {
         bencher.iter(|| {
             let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractOptions::new()
-                .with_pixel_format(PixelFormat::Rgba8);
+            let config = ExtractOptions::new().with_pixel_format(PixelFormat::Rgba8);
             let _frames = unbundler
                 .video()
                 .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -116,8 +115,7 @@ fn benchmark_pixel_formats(criterion: &mut Criterion) {
     criterion.bench_function("extract frame Gray8", |bencher| {
         bencher.iter(|| {
             let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractOptions::new()
-                .with_pixel_format(PixelFormat::Gray8);
+            let config = ExtractOptions::new().with_pixel_format(PixelFormat::Gray8);
             let _frames = unbundler
                 .video()
                 .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -128,8 +126,7 @@ fn benchmark_pixel_formats(criterion: &mut Criterion) {
     criterion.bench_function("extract frame scaled 320w", |bencher| {
         bencher.iter(|| {
             let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractOptions::new()
-                .with_resolution(Some(320), None);
+            let config = ExtractOptions::new().with_resolution(Some(320), None);
             let _frames = unbundler
                 .video()
                 .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -187,7 +184,10 @@ fn benchmark_remuxing(criterion: &mut Criterion) {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let output_path = tmp.path().with_extension("mp4");
         bencher.iter(|| {
-            Remuxer::new(SAMPLE_MKV, &output_path).unwrap().run().unwrap();
+            Remuxer::new(SAMPLE_MKV, &output_path)
+                .unwrap()
+                .run()
+                .unwrap();
         });
         let _ = std::fs::remove_file(&output_path);
     });
@@ -249,8 +249,8 @@ fn benchmark_hwaccel(criterion: &mut Criterion) {
     group.bench_function("auto", |bencher| {
         bencher.iter(|| {
             let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-            let config = ExtractOptions::new()
-                .with_hardware_acceleration(HardwareAccelerationMode::Auto);
+            let config =
+                ExtractOptions::new().with_hardware_acceleration(HardwareAccelerationMode::Auto);
             let _frames = unbundler
                 .video()
                 .frames_with_options(FrameRange::Range(0, 0), &config)
@@ -302,10 +302,7 @@ fn benchmark_parallel(criterion: &mut Criterion) {
             let config = ExtractOptions::new();
             let _frames = unbundler
                 .video()
-                .frames_parallel(
-                    FrameRange::Specific(vec![0, 30, 60, 90, 120]),
-                    &config,
-                )
+                .frames_parallel(FrameRange::Specific(vec![0, 30, 60, 90, 120]), &config)
                 .unwrap();
         });
     });

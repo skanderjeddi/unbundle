@@ -138,9 +138,7 @@ pub(crate) fn validate_metadata(metadata: &MediaMetadata) -> ValidationReport {
     // ── Audio checks ───────────────────────────────────────────────
     if let Some(audio) = &metadata.audio {
         if audio.sample_rate == 0 {
-            report
-                .errors
-                .push("Audio sample rate is zero".to_string());
+            report.errors.push("Audio sample rate is zero".to_string());
         }
 
         if audio.channels == 0 {
@@ -158,31 +156,25 @@ pub(crate) fn validate_metadata(metadata: &MediaMetadata) -> ValidationReport {
     // ── Multi-track info ───────────────────────────────────────────
     if let Some(tracks) = &metadata.audio_tracks {
         if tracks.len() > 1 {
-            report.info.push(format!(
-                "{} audio tracks available",
-                tracks.len(),
-            ));
+            report
+                .info
+                .push(format!("{} audio tracks available", tracks.len(),));
         }
     }
 
     // ── Subtitle info ──────────────────────────────────────────────
     if let Some(sub) = &metadata.subtitle {
-        let lang = sub
-            .language
-            .as_deref()
-            .unwrap_or("unknown language");
-        report.info.push(format!(
-            "Subtitle: {} ({})",
-            sub.codec, lang,
-        ));
+        let lang = sub.language.as_deref().unwrap_or("unknown language");
+        report
+            .info
+            .push(format!("Subtitle: {} ({})", sub.codec, lang,));
     }
 
     if let Some(tracks) = &metadata.subtitle_tracks {
         if tracks.len() > 1 {
-            report.info.push(format!(
-                "{} subtitle tracks available",
-                tracks.len(),
-            ));
+            report
+                .info
+                .push(format!("{} subtitle tracks available", tracks.len(),));
         }
     }
 

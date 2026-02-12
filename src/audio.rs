@@ -4,24 +4,27 @@
 //! media files, and [`AudioFormat`] for specifying the output encoding.
 //! Audio can be extracted to memory as `Vec<u8>` or written directly to a file.
 
-use std::{ffi::CString, fmt::{Display, Formatter, Result as FmtResult}, path::Path, time::Duration};
+use std::{
+    ffi::CString,
+    fmt::{Display, Formatter, Result as FmtResult},
+    path::Path,
+    time::Duration,
+};
 
 use ffmpeg_next::{
-    ChannelLayout,
-    codec::{context::Context as CodecContext, Id},
+    ChannelLayout, Packet, Rational,
+    codec::{Id, context::Context as CodecContext},
     decoder::Audio as AudioDecoder,
     encoder::Audio as AudioEncoder,
-    format::{context::Output, Sample, sample::Type as SampleType},
+    format::{Sample, context::Output, sample::Type as SampleType},
     frame::Audio as AudioFrame,
-    Packet,
     packet::Mut as PacketMut,
-    Rational,
     software::resampling::Context as ResamplingContext,
 };
 use ffmpeg_sys_next::{AVFormatContext, AVRational};
 
-use crate::{configuration::ExtractOptions, error::UnbundleError, unbundle::MediaFile};
 use crate::audio_iterator::AudioIterator;
+use crate::{configuration::ExtractOptions, error::UnbundleError, unbundle::MediaFile};
 
 #[cfg(feature = "loudness")]
 use crate::loudness::LoudnessInfo;
@@ -384,9 +387,7 @@ impl<'a> AudioHandle<'a> {
     /// # Ok::<(), UnbundleError>(())
     /// ```
     #[cfg(feature = "loudness")]
-    pub fn analyze_loudness(
-        &mut self,
-    ) -> Result<LoudnessInfo, UnbundleError> {
+    pub fn analyze_loudness(&mut self) -> Result<LoudnessInfo, UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
         crate::loudness::analyze_loudness_impl(self.unbundler, audio_stream_index)
     }
@@ -439,7 +440,11 @@ impl<'a> AudioHandle<'a> {
         config: Option<&ExtractOptions>,
     ) -> Result<Vec<u8>, UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
-        log::debug!("Extracting audio to memory (format={}, stream={})", format, audio_stream_index);
+        log::debug!(
+            "Extracting audio to memory (format={}, stream={})",
+            format,
+            audio_stream_index
+        );
 
         // Validate timestamps.
         let media_duration = self.unbundler.metadata.duration;
@@ -490,11 +495,10 @@ impl<'a> AudioHandle<'a> {
 
         // Seek to start position if a range is specified.
         if let Some(start_time) = start {
-            let start_timestamp =
-                crate::conversion::duration_to_stream_timestamp(start_time, input_time_base);
+            let seek_timestamp = crate::conversion::duration_to_seek_timestamp(start_time);
             self.unbundler
                 .input_context
-                .seek(start_timestamp, ..start_timestamp)?;
+                .seek(seek_timestamp, ..seek_timestamp)?;
         }
 
         // Compute end timestamp in stream time base for range filtering.
@@ -635,7 +639,9 @@ impl<'a> AudioHandle<'a> {
             let mut resampled_frame = AudioFrame::empty();
             let mut encoded_packet = Packet::empty();
             let mut samples_written: i64 = 0;
-            let mut writer = MemoryPacketWriter { format_context: output_format_context };
+            let mut writer = MemoryPacketWriter {
+                format_context: output_format_context,
+            };
 
             let transcode_result = self.transcode_audio_packets(
                 audio_stream_index,
@@ -745,7 +751,12 @@ impl<'a> AudioHandle<'a> {
         config: Option<&ExtractOptions>,
     ) -> Result<(), UnbundleError> {
         let audio_stream_index = self.resolve_stream_index()?;
-        log::debug!("Saving audio to file {:?} (format={}, stream={})", path, format, audio_stream_index);
+        log::debug!(
+            "Saving audio to file {:?} (format={}, stream={})",
+            path,
+            format,
+            audio_stream_index
+        );
 
         let media_duration = self.unbundler.metadata.duration;
         if let Some(start_time) = start
@@ -791,11 +802,10 @@ impl<'a> AudioHandle<'a> {
 
         // Seek if a start time was specified.
         if let Some(start_time) = start {
-            let start_timestamp =
-                crate::conversion::duration_to_stream_timestamp(start_time, input_time_base);
+            let seek_timestamp = crate::conversion::duration_to_seek_timestamp(start_time);
             self.unbundler
                 .input_context
-                .seek(start_timestamp, ..start_timestamp)?;
+                .seek(seek_timestamp, ..seek_timestamp)?;
         }
 
         let end_stream_timestamp = end.map(|end_time| {
@@ -840,7 +850,9 @@ impl<'a> AudioHandle<'a> {
         let mut samples_written: i64 = 0;
 
         {
-            let mut writer = FilePacketWriter { output_context: &mut output_context };
+            let mut writer = FilePacketWriter {
+                output_context: &mut output_context,
+            };
 
             // Decode → resample → encode → write loop.
             self.transcode_audio_packets(
@@ -1128,10 +1140,7 @@ struct MemoryPacketWriter {
 impl PacketWriter for MemoryPacketWriter {
     fn write_packet(&mut self, packet: &mut Packet) -> Result<(), UnbundleError> {
         unsafe {
-            ffmpeg_sys_next::av_interleaved_write_frame(
-                self.format_context,
-                packet.as_mut_ptr(),
-            );
+            ffmpeg_sys_next::av_interleaved_write_frame(self.format_context, packet.as_mut_ptr());
         }
         Ok(())
     }

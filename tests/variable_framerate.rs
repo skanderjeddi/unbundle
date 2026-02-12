@@ -16,7 +16,10 @@ fn analyze_variable_framerate_on_cfr_video() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("open");
-    let analysis = unbundler.video().analyze_variable_framerate().expect("vfr analysis");
+    let analysis = unbundler
+        .video()
+        .analyze_variable_framerate()
+        .expect("vfr analysis");
 
     // The test fixture is 30 fps constant.
     assert!(
@@ -42,7 +45,10 @@ fn vfr_analysis_field_consistency() {
     }
 
     let mut unbundler = MediaFile::open(path).expect("open");
-    let analysis = unbundler.video().analyze_variable_framerate().expect("vfr analysis");
+    let analysis = unbundler
+        .video()
+        .analyze_variable_framerate()
+        .expect("vfr analysis");
 
     assert!(analysis.min_fps <= analysis.mean_fps);
     assert!(analysis.mean_fps <= analysis.max_fps);

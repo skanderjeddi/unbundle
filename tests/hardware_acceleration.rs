@@ -55,7 +55,8 @@ fn hardware_acceleration_software_fallback() {
     }
 
     let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-    let config = ExtractOptions::new().with_hardware_acceleration(HardwareAccelerationMode::Software);
+    let config =
+        ExtractOptions::new().with_hardware_acceleration(HardwareAccelerationMode::Software);
 
     let frame = unbundler
         .video()

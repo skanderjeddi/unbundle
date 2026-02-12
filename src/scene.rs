@@ -23,8 +23,7 @@ use std::ffi::CStr;
 use std::time::Duration;
 
 use ffmpeg_next::{
-    codec::context::Context as CodecContext,
-    filter::Graph as FilterGraph,
+    codec::context::Context as CodecContext, filter::Graph as FilterGraph,
     frame::Video as VideoFrame,
 };
 
@@ -80,7 +79,11 @@ pub(crate) fn detect_scenes_impl(
         .or(unbundler.video_stream_index)
         .ok_or(UnbundleError::NoVideoStream)?;
 
-    log::debug!("Detecting scenes (stream={}, threshold={})", video_stream_index, config.threshold);
+    log::debug!(
+        "Detecting scenes (stream={}, threshold={})",
+        video_stream_index,
+        config.threshold
+    );
 
     let stream = unbundler
         .input_context
@@ -100,6 +103,9 @@ pub(crate) fn detect_scenes_impl(
     // Discover the actual decoded pixel format by decoding the first frame.
     // The decoder's reported format before decoding may differ from the
     // real output (e.g. codec parameters say YUYV422 but output is YUV420P).
+    // We still probe to get a reasonable starting format for the buffer
+    // filter, but a `format` filter in the chain normalises any mid-stream
+    // pixel-format changes to YUV420P before they reach `scdet`.
     let mut actual_pix_fmt: Option<i32> = None;
 
     'probe: for (stream, packet) in unbundler.input_context.packets() {
@@ -119,7 +125,13 @@ pub(crate) fn detect_scenes_impl(
 
     let pix_fmt = actual_pix_fmt.unwrap_or(decoder.format() as i32);
 
-    // Build the filter graph: buffer → scdet → buffersink
+    // Build the filter graph: buffer → format → scdet → buffersink
+    //
+    // The `format` filter normalises all frames to YUV420P. This is
+    // necessary because some decoders change their output pixel format
+    // mid-stream (e.g. first frame as YUV422P, subsequent as YUV420P),
+    // which would cause the filter chain to reject frames with a
+    // "Changing video frame properties on the fly" error.
     let mut graph = FilterGraph::new();
 
     let buffer_args = format!(
@@ -132,20 +144,33 @@ pub(crate) fn detect_scenes_impl(
     );
 
     graph
-        .add(&ffmpeg_next::filter::find("buffer").ok_or_else(|| {
-            UnbundleError::VideoDecodeError("FFmpeg 'buffer' filter not found".to_string())
-        })?, "in", &buffer_args)
-        .map_err(|e| UnbundleError::VideoDecodeError(format!("Failed to add buffer filter: {e}")))?;
+        .add(
+            &ffmpeg_next::filter::find("buffer").ok_or_else(|| {
+                UnbundleError::VideoDecodeError("FFmpeg 'buffer' filter not found".to_string())
+            })?,
+            "in",
+            &buffer_args,
+        )
+        .map_err(|e| {
+            UnbundleError::VideoDecodeError(format!("Failed to add buffer filter: {e}"))
+        })?;
 
     graph
-        .add(&ffmpeg_next::filter::find("buffersink").ok_or_else(|| {
-            UnbundleError::VideoDecodeError("FFmpeg 'buffersink' filter not found".to_string())
-        })?, "out", "")
+        .add(
+            &ffmpeg_next::filter::find("buffersink").ok_or_else(|| {
+                UnbundleError::VideoDecodeError("FFmpeg 'buffersink' filter not found".to_string())
+            })?,
+            "out",
+            "",
+        )
         .map_err(|e| {
             UnbundleError::VideoDecodeError(format!("Failed to add buffersink filter: {e}"))
         })?;
 
-    let scdet_spec = format!("scdet=threshold={}", config.threshold);
+    let scdet_spec = format!(
+        "format=pix_fmts=yuv420p,scdet=threshold={}",
+        config.threshold
+    );
     graph
         .output("in", 0)
         .map_err(|e| UnbundleError::VideoDecodeError(format!("Filter graph output error: {e}")))?
@@ -159,51 +184,40 @@ pub(crate) fn detect_scenes_impl(
         .map_err(|e| UnbundleError::VideoDecodeError(format!("Filter graph validation: {e}")))?;
 
     // Helper: feed a decoded frame through the filter graph and collect scenes.
-    let mut feed_and_collect =
-        |graph: &mut FilterGraph,
-         frame: &VideoFrame,
-         scenes: &mut Vec<SceneChange>|
-         -> Result<(), UnbundleError> {
-            graph
-                .get("in")
-                .ok_or_else(|| {
-                    UnbundleError::VideoDecodeError("Filter 'in' not found".to_string())
-                })?
-                .source()
-                .add(frame)
-                .map_err(|e| {
-                    UnbundleError::VideoDecodeError(format!("Failed to feed filter: {e}"))
-                })?;
+    let mut feed_and_collect = |graph: &mut FilterGraph,
+                                frame: &VideoFrame,
+                                scenes: &mut Vec<SceneChange>|
+     -> Result<(), UnbundleError> {
+        graph
+            .get("in")
+            .ok_or_else(|| UnbundleError::VideoDecodeError("Filter 'in' not found".to_string()))?
+            .source()
+            .add(frame)
+            .map_err(|e| UnbundleError::VideoDecodeError(format!("Failed to feed filter: {e}")))?;
 
-            while graph
-                .get("out")
-                .ok_or_else(|| {
-                    UnbundleError::VideoDecodeError("Filter 'out' not found".to_string())
-                })?
-                .sink()
-                .frame(&mut filtered_frame)
-                .is_ok()
-            {
-                let score = read_scdet_score(&filtered_frame);
-                if let Some(score) = score.filter(|&s| s >= config.threshold) {
-                    let pts = filtered_frame.pts().unwrap_or(0);
-                    let timestamp = Duration::from_secs_f64(
-                        crate::conversion::pts_to_seconds(pts, time_base),
-                    );
-                    let frame_number = crate::conversion::pts_to_frame_number(
-                        pts,
-                        time_base,
-                        frames_per_second,
-                    );
-                    scenes.push(SceneChange {
-                        timestamp,
-                        frame_number,
-                        score,
-                    });
-                }
+        while graph
+            .get("out")
+            .ok_or_else(|| UnbundleError::VideoDecodeError("Filter 'out' not found".to_string()))?
+            .sink()
+            .frame(&mut filtered_frame)
+            .is_ok()
+        {
+            let score = read_scdet_score(&filtered_frame);
+            if let Some(score) = score.filter(|&s| s >= config.threshold) {
+                let pts = filtered_frame.pts().unwrap_or(0);
+                let timestamp =
+                    Duration::from_secs_f64(crate::conversion::pts_to_seconds(pts, time_base));
+                let frame_number =
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+                scenes.push(SceneChange {
+                    timestamp,
+                    frame_number,
+                    score,
+                });
             }
-            Ok(())
-        };
+        }
+        Ok(())
+    };
 
     // Feed the first frame we already decoded (still in decoded_frame).
     if actual_pix_fmt.is_some() {
@@ -286,12 +300,7 @@ fn read_scdet_score(frame: &VideoFrame) -> Option<f64> {
         }
 
         let key = c"lavfi.scd.score";
-        let entry = ffmpeg_sys_next::av_dict_get(
-            metadata,
-            key.as_ptr(),
-            std::ptr::null(),
-            0,
-        );
+        let entry = ffmpeg_sys_next::av_dict_get(metadata, key.as_ptr(), std::ptr::null(), 0);
 
         if entry.is_null() {
             return None;

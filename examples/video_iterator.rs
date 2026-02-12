@@ -32,9 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // ── Early exit ─────────────────────────────────────────────────
     println!("\nDemonstrating early exit (stop after 3 frames)...");
-    let iter = unbundler
-        .video()
-        .frame_iter(FrameRange::Range(0, 29))?;
+    let iter = unbundler.video().frame_iter(FrameRange::Range(0, 29))?;
 
     let mut count = 0;
     for result in iter {

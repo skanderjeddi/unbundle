@@ -83,7 +83,11 @@ impl GifOptions {
     }
 
     /// Build a [`FrameOutputOptions`] matching this GIF configuration.
-    pub(crate) fn to_frame_output_config(&self, _source_width: u32, _source_height: u32) -> FrameOutputOptions {
+    pub(crate) fn to_frame_output_config(
+        &self,
+        _source_width: u32,
+        _source_height: u32,
+    ) -> FrameOutputOptions {
         let mut foc = FrameOutputOptions::default();
         // GIF is always RGBA8 for transparency / palette handling.
         foc.pixel_format = PixelFormat::Rgba8;
@@ -105,7 +109,10 @@ pub(crate) fn encode_gif<P: AsRef<Path>>(
 ) -> Result<(), UnbundleError> {
     log::debug!(
         "Encoding {} frames to GIF file {:?} (width={:?}, delay={})",
-        frames.len(), path.as_ref(), config.width, config.frame_delay,
+        frames.len(),
+        path.as_ref(),
+        config.width,
+        config.frame_delay,
     );
     if frames.is_empty() {
         return Ok(());
@@ -115,21 +122,19 @@ pub(crate) fn encode_gif<P: AsRef<Path>>(
     let width = first.width() as u16;
     let height = first.height() as u16;
 
-    let file = File::create(path.as_ref()).map_err(|e| {
-        UnbundleError::GifEncodeError(format!("Failed to create GIF file: {e}"))
-    })?;
+    let file = File::create(path.as_ref())
+        .map_err(|e| UnbundleError::GifEncodeError(format!("Failed to create GIF file: {e}")))?;
 
-    let mut encoder = Encoder::new(file, width, height, &[]).map_err(|e| {
-        UnbundleError::GifEncodeError(format!("Failed to create GIF encoder: {e}"))
-    })?;
+    let mut encoder = Encoder::new(file, width, height, &[])
+        .map_err(|e| UnbundleError::GifEncodeError(format!("Failed to create GIF encoder: {e}")))?;
 
     let repeat = match config.repeat {
         None => Repeat::Infinite,
         Some(n) => Repeat::Finite(n),
     };
-    encoder.set_repeat(repeat).map_err(|e| {
-        UnbundleError::GifEncodeError(format!("Failed to set GIF repeat: {e}"))
-    })?;
+    encoder
+        .set_repeat(repeat)
+        .map_err(|e| UnbundleError::GifEncodeError(format!("Failed to set GIF repeat: {e}")))?;
 
     for image in frames {
         let rgba = image.to_rgba8();
@@ -155,7 +160,9 @@ pub(crate) fn encode_gif_to_memory(
 ) -> Result<Vec<u8>, UnbundleError> {
     log::debug!(
         "Encoding {} frames to GIF in memory (width={:?}, delay={})",
-        frames.len(), config.width, config.frame_delay,
+        frames.len(),
+        config.width,
+        config.frame_delay,
     );
     if frames.is_empty() {
         return Ok(Vec::new());
@@ -176,9 +183,9 @@ pub(crate) fn encode_gif_to_memory(
             None => Repeat::Infinite,
             Some(n) => Repeat::Finite(n),
         };
-        encoder.set_repeat(repeat).map_err(|e| {
-            UnbundleError::GifEncodeError(format!("Failed to set GIF repeat: {e}"))
-        })?;
+        encoder
+            .set_repeat(repeat)
+            .map_err(|e| UnbundleError::GifEncodeError(format!("Failed to set GIF repeat: {e}")))?;
 
         for image in frames {
             let rgba = image.to_rgba8();

@@ -10,12 +10,16 @@ use unbundle::{AudioFormat, MediaFile, Transcoder, UnbundleError};
 
 #[cfg(not(feature = "transcode"))]
 fn main() {
-    eprintln!("This example requires the `transcode` feature: cargo run --features transcode --example transcode -- <video_path>");
+    eprintln!(
+        "This example requires the `transcode` feature: cargo run --features transcode --example transcode -- <video_path>"
+    );
 }
 
 #[cfg(feature = "transcode")]
 fn main() -> Result<(), UnbundleError> {
-    let path = std::env::args().nth(1).expect("Usage: transcode <video_path>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("Usage: transcode <video_path>");
 
     let mut unbundler = MediaFile::open(&path)?;
 

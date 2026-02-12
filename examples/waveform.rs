@@ -7,12 +7,16 @@ use unbundle::{MediaFile, UnbundleError, WaveformOptions};
 
 #[cfg(not(feature = "waveform"))]
 fn main() {
-    eprintln!("This example requires the `waveform` feature: cargo run --features waveform --example waveform -- <video_path>");
+    eprintln!(
+        "This example requires the `waveform` feature: cargo run --features waveform --example waveform -- <video_path>"
+    );
 }
 
 #[cfg(feature = "waveform")]
 fn main() -> Result<(), UnbundleError> {
-    let path = std::env::args().nth(1).expect("Usage: waveform <video_path>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("Usage: waveform <video_path>");
 
     let mut unbundler = MediaFile::open(&path)?;
 

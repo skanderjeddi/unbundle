@@ -98,8 +98,7 @@ impl<'a> Iterator for PacketIterator<'a> {
                 let pts = packet.pts();
                 let dts = packet.dts();
                 let pts_duration = pts.map(|p| {
-                    let seconds = p as f64
-                        * time_base.numerator() as f64
+                    let seconds = p as f64 * time_base.numerator() as f64
                         / time_base.denominator().max(1) as f64;
                     Duration::from_secs_f64(seconds.max(0.0))
                 });

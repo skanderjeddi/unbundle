@@ -130,9 +130,7 @@ fn detect_scenes_with_cancellation() {
     token.cancel();
 
     let config = ExtractOptions::new().with_cancellation(token);
-    let result = unbundler
-        .video()
-        .detect_scenes_with_options(None, &config);
+    let result = unbundler.video().detect_scenes_with_options(None, &config);
 
     assert!(result.is_err(), "cancelled detection should error");
     let err = format!("{}", result.unwrap_err());
@@ -176,5 +174,8 @@ fn scene_change_debug_and_clone() {
     assert!((cloned.score - 85.3).abs() < f64::EPSILON);
 
     let debug = format!("{:?}", sc);
-    assert!(debug.contains("45"), "Debug should show frame number: {debug}");
+    assert!(
+        debug.contains("45"),
+        "Debug should show frame number: {debug}"
+    );
 }

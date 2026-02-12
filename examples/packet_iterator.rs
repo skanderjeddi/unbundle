@@ -5,7 +5,9 @@
 use unbundle::{MediaFile, UnbundleError};
 
 fn main() -> Result<(), UnbundleError> {
-    let path = std::env::args().nth(1).expect("Usage: packet_iter <video_path>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("Usage: packet_iter <video_path>");
 
     let mut unbundler = MediaFile::open(&path)?;
 

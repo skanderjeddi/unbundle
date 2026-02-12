@@ -23,12 +23,10 @@
 //! ```
 
 use ffmpeg_next::{
+    Error as FfmpegError, Packet, Rational,
     codec::context::Context as CodecContext,
     decoder::Video as VideoDecoder,
-    Error as FfmpegError,
     frame::Video as VideoFrame,
-    Packet,
-    Rational,
     software::scaling::{Context as ScalingContext, Flags as ScalingFlags},
 };
 use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
@@ -118,10 +116,8 @@ impl<'a> FrameIterator<'a> {
 
         // Seek to the first requested frame.
         if let Some(&first) = frame_numbers.first() {
-            let first_ts = crate::conversion::frame_number_to_stream_timestamp(
-                first, fps, time_base,
-            );
-            let _ = unbundler.input_context.seek(first_ts, ..first_ts);
+            let seek_ts = crate::conversion::frame_number_to_seek_timestamp(first, fps);
+            let _ = unbundler.input_context.seek(seek_ts, ..seek_ts);
         }
 
         Ok(Self {
@@ -153,8 +149,7 @@ impl<'a> FrameIterator<'a> {
 
         match self.output_config.pixel_format {
             PixelFormat::Rgb8 => {
-                let buf =
-                    crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 3);
+                let buf = crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 3);
                 let img = RgbImage::from_raw(width, height, buf).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct RGB image from decoded frame data".to_string(),
@@ -163,8 +158,7 @@ impl<'a> FrameIterator<'a> {
                 Ok(DynamicImage::ImageRgb8(img))
             }
             PixelFormat::Rgba8 => {
-                let buf =
-                    crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 4);
+                let buf = crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 4);
                 let img = RgbaImage::from_raw(width, height, buf).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct RGBA image from decoded frame data".to_string(),
@@ -173,8 +167,7 @@ impl<'a> FrameIterator<'a> {
                 Ok(DynamicImage::ImageRgba8(img))
             }
             PixelFormat::Gray8 => {
-                let buf =
-                    crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 1);
+                let buf = crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 1);
                 let img = GrayImage::from_raw(width, height, buf).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct grayscale image from decoded frame data".to_string(),

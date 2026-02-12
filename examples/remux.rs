@@ -27,8 +27,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Remux without subtitles.
     let no_subs_path = format!(
         "{}_nosubs.{}",
-        output_path.rsplit_once('.').map(|(s, _)| s).unwrap_or(&output_path),
-        output_path.rsplit_once('.').map(|(_, e)| e).unwrap_or("mp4"),
+        output_path
+            .rsplit_once('.')
+            .map(|(s, _)| s)
+            .unwrap_or(&output_path),
+        output_path
+            .rsplit_once('.')
+            .map(|(_, e)| e)
+            .unwrap_or("mp4"),
     );
     Remuxer::new(&input_path, &no_subs_path)?
         .exclude_subtitles()
@@ -38,8 +44,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Remux audio only (no video, no subtitles).
     let audio_only_path = format!(
         "{}_audio.{}",
-        output_path.rsplit_once('.').map(|(s, _)| s).unwrap_or(&output_path),
-        output_path.rsplit_once('.').map(|(_, e)| e).unwrap_or("mp4"),
+        output_path
+            .rsplit_once('.')
+            .map(|(s, _)| s)
+            .unwrap_or(&output_path),
+        output_path
+            .rsplit_once('.')
+            .map(|(_, e)| e)
+            .unwrap_or("mp4"),
     );
     Remuxer::new(&input_path, &audio_only_path)?
         .exclude_video()
