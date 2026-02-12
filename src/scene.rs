@@ -23,9 +23,8 @@ use std::ffi::CStr;
 use std::time::Duration;
 
 use ffmpeg_next::{
-    codec::context::Context as CodecContext, filter::Graph as FilterGraph,
-    Error as FfmpegError, Packet,
-    frame::Video as VideoFrame,
+    Error as FfmpegError, Packet, codec::context::Context as CodecContext,
+    filter::Graph as FilterGraph, frame::Video as VideoFrame,
 };
 use ffmpeg_sys_next::AVPixelFormat;
 
@@ -212,15 +211,12 @@ pub(crate) fn detect_scenes_impl(
             .map_err(|e| UnbundleError::VideoDecodeError(e.to_string()))?;
 
         if decoder.receive_frame(&mut decoded_frame).is_ok() {
-            actual_pix_fmt = Some(
-                AVPixelFormat::from(decoded_frame.format()) as i32,
-            );
+            actual_pix_fmt = Some(AVPixelFormat::from(decoded_frame.format()) as i32);
             break 'probe;
         }
     }
 
-    let pix_fmt = actual_pix_fmt
-        .unwrap_or(AVPixelFormat::from(decoder.format()) as i32);
+    let pix_fmt = actual_pix_fmt.unwrap_or(AVPixelFormat::from(decoder.format()) as i32);
 
     // Read colorspace and color range from the probed frame so the buffer
     // filter matches the decoded frame properties exactly. We read the raw
