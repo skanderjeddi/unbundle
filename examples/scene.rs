@@ -24,9 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .max_scene_changes(100);
     println!(
         "Detecting scenes (threshold {:.1}, max_duration={:?}, max_scene_changes={:?})...",
-        config.threshold,
-        config.max_duration,
-        config.max_scene_changes,
+        config.threshold, config.max_duration, config.max_scene_changes,
     );
 
     let scenes = unbundler.video().detect_scenes(Some(config))?;

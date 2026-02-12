@@ -41,14 +41,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "4.0"
+unbundle = "4.2"
 ```
 
 Or with additional features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.0", features = ["async", "rayon", "hardware"] }
+unbundle = { version = "4.2", features = ["async", "rayon", "hardware"] }
 ```
 
 ### System Requirements
@@ -261,7 +261,7 @@ Enable additional functionality through Cargo features:
 
 ```toml
 [dependencies]
-unbundle = { version = "3.0", features = ["full"] }
+unbundle = { version = "4.2", features = ["full"] }
 ```
 
 #### Feature Usage Guide
