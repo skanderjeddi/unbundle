@@ -105,6 +105,7 @@ mod conversion;
 #[cfg(feature = "encode")]
 pub mod encode;
 pub mod error;
+pub mod ffmpeg;
 #[cfg(feature = "gif")]
 pub mod gif;
 #[cfg(feature = "hardware")]
@@ -141,6 +142,7 @@ pub use configuration::{ExtractOptions, FrameOutputOptions, PixelFormat};
 #[cfg(feature = "encode")]
 pub use encode::{VideoCodec, VideoEncoder, VideoEncoderOptions};
 pub use error::UnbundleError;
+pub use ffmpeg::{FfmpegLogLevel, get_ffmpeg_log_level, set_ffmpeg_log_level};
 #[cfg(feature = "gif")]
 pub use gif::GifOptions;
 #[cfg(feature = "hardware")]

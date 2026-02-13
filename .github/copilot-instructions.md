@@ -22,6 +22,7 @@
 - `VariableFrameRateAnalysis` detects variable frame rate streams by analysing PTS distributions. See [src/variable_framerate.rs](../src/variable_framerate.rs).
 - `PacketIterator` and `PacketInfo` provide raw packet-level demuxer iteration without decoding. See [src/packet_iterator.rs](../src/packet_iterator.rs).
 - `AudioIterator` and `AudioChunk` provide lazy pull-based audio sample iteration with mono f32 resampling. See [src/audio_iterator.rs](../src/audio_iterator.rs).
+- `FfmpegLogLevel`, `set_ffmpeg_log_level`, and `get_ffmpeg_log_level` expose FFmpeg's internal log verbosity without requiring users to import `ffmpeg-next` directly. See [src/ffmpeg.rs](../src/ffmpeg.rs).
 
 ### Feature-gated modules
 - `async`: `FrameStream` (background decode thread → mpsc channel → `tokio_stream::Stream`) and `AudioFuture` for non-blocking extraction. See [src/stream.rs](../src/stream.rs).
@@ -58,6 +59,7 @@
 | [src/probe.rs](../src/probe.rs) | `MediaProbe` — lightweight stateless media file probing |
 | [src/thumbnail.rs](../src/thumbnail.rs) | `ThumbnailHandle`, `ThumbnailOptions` — thumbnail generation helpers |
 | [src/keyframe.rs](../src/keyframe.rs) | `GroupOfPicturesInfo`, `KeyFrameMetadata` — keyframe and Group of Pictures analysis |
+| [src/ffmpeg.rs](../src/ffmpeg.rs) | `FfmpegLogLevel`, `set_ffmpeg_log_level`, `get_ffmpeg_log_level` — FFmpeg log verbosity control |
 | [src/variable_framerate.rs](../src/variable_framerate.rs) | `VariableFrameRateAnalysis` — variable frame rate detection |
 | [src/packet_iterator.rs](../src/packet_iterator.rs) | `PacketIterator`, `PacketInfo` — raw packet-level iteration |
 | [src/audio_iterator.rs](../src/audio_iterator.rs) | `AudioIterator`, `AudioChunk` — lazy audio sample iteration |
