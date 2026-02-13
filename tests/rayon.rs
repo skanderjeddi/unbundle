@@ -110,3 +110,25 @@ fn parallel_interval() {
         "interval extraction should return at least one frame",
     );
 }
+
+#[test]
+fn parallel_from_open_url_source_input() {
+    if skip_unless(SAMPLE_VIDEO) {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open_url(SAMPLE_VIDEO).unwrap();
+    let frames = unbundler
+        .video()
+        .frames_parallel(
+            FrameRange::Specific(vec![0, 15, 30]),
+            &ExtractOptions::new(),
+        )
+        .unwrap();
+
+    assert_eq!(frames.len(), 3);
+    for frame in &frames {
+        assert!(frame.width() > 0);
+        assert!(frame.height() > 0);
+    }
+}

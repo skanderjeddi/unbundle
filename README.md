@@ -42,14 +42,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "4.3.3"
+unbundle = "4.3.5"
 ```
 
 Or with additional features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.3.3", features = ["async", "rayon", "hardware"] }
+unbundle = { version = "4.3.5", features = ["async", "rayon", "hardware"] }
 ```
 
 ### System Requirements
@@ -129,6 +129,19 @@ let frames = unbundler.video().frames(
     FrameRange::Specific(vec![0, 50, 100, 150])
 )?;
 ```
+
+### Open from URLs or Streams
+
+```rust
+use unbundle::MediaFile;
+
+// Works with paths, file:// URLs, and network URLs supported by your FFmpeg build.
+let mut unbundler = MediaFile::open_url("https://example.com/video.mp4")?;
+let metadata = unbundler.metadata();
+println!("Format: {}", metadata.format);
+```
+
+`open_url()` accepts any FFmpeg input string, including `http://`, `https://`, `rtsp://`, and local path-like sources.
 
 ### Apply FFmpeg Filters to Frames
 
@@ -340,7 +353,7 @@ Enable additional functionality through Cargo features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.3.3", features = ["full"] }
+unbundle = { version = "4.3.5", features = ["full"] }
 ```
 
 #### Feature Usage Guide
@@ -363,6 +376,7 @@ The [`examples/`](https://github.com/skanderjeddi/unbundle/tree/main/examples) d
 | `extract_frames` | Extract frames by number, timestamp, range, interval |
 | `extract_audio` | Extract the complete audio track |
 | `extract_audio_segment` | Extract a specific time range as MP3 |
+| `open_url` | Open from URL/path-like source strings |
 | `thumbnail` | Create a thumbnail grid from evenly-spaced frames |
 | `metadata` | Display all media metadata |
 | `video_iterator` | Lazy frame iteration with early exit |

@@ -56,6 +56,15 @@
 //! unbundler.subtitle().save("output.srt", SubtitleFormat::Srt).unwrap();
 //! ```
 //!
+//! ### Open URL / Source String
+//!
+//! ```no_run
+//! use unbundle::MediaFile;
+//!
+//! let mut unbundler = MediaFile::open_url("https://example.com/video.mp4").unwrap();
+//! println!("{}", unbundler.metadata().format);
+//! ```
+//!
 //! ## Features
 //!
 //! - **Frame extraction** — by frame number, timestamp, range, interval, or
@@ -83,6 +92,7 @@
 //! - **Thumbnail helpers** — single thumbnails, grids, and smart selection
 //! - **Efficient seeking** — seeks to nearest keyframe, then decodes forward
 //! - **Zero-copy in-memory audio** — uses FFmpeg's dynamic buffer I/O
+//! - **Flexible source opening** — open from local paths, URL inputs, and FFmpeg source strings
 //!
 //! ### Optional Features
 //!

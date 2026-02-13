@@ -126,3 +126,44 @@ async fn audio_future_extracts_wav() {
         "WAV output should start with RIFF header",
     );
 }
+
+#[tokio::test]
+async fn stream_from_open_url_source_input() {
+    if skip_unless(SAMPLE_VIDEO) {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open_url(SAMPLE_VIDEO).unwrap();
+    let mut stream = unbundler
+        .video()
+        .frame_stream(FrameRange::Range(0, 2), ExtractOptions::new())
+        .unwrap();
+
+    let mut count = 0u64;
+    while let Some(result) = stream.next().await {
+        let (_frame_number, image): (u64, DynamicImage) = result.unwrap();
+        assert!(image.width() > 0);
+        assert!(image.height() > 0);
+        count += 1;
+    }
+
+    assert_eq!(count, 3, "expected three frames from URL-opened source");
+}
+
+#[tokio::test]
+async fn audio_future_from_open_url_source_input() {
+    if skip_unless(SAMPLE_VIDEO) {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open_url(SAMPLE_VIDEO).unwrap();
+    let audio_bytes = unbundler
+        .audio()
+        .extract_async(unbundle::AudioFormat::Wav, ExtractOptions::new())
+        .unwrap()
+        .await
+        .unwrap();
+
+    assert!(!audio_bytes.is_empty(), "expected non-empty WAV data");
+    assert_eq!(&audio_bytes[..4], b"RIFF");
+}
