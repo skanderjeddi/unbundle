@@ -13,7 +13,11 @@ use std::{
     time::Duration,
 };
 
-use ffmpeg_next::{codec::context::Context as CodecContext, format::context::Input, media::Type};
+use ffmpeg_next::{
+    codec::context::Context as CodecContext,
+    format::{context::Input, stream::Disposition},
+    media::Type,
+};
 
 use crate::{
     audio::AudioHandle,
@@ -159,30 +163,44 @@ impl MediaFile {
                 continue;
             }
 
+            // Skip attached pictures (e.g. embedded cover art tagged as
+            // codec_type=video). These are single-image streams that cannot
+            // be decoded as regular video and would cause open() to fail.
+            if stream.disposition().contains(Disposition::ATTACHED_PIC) {
+                log::debug!(
+                    "Skipping attached-picture stream {} (cover art)",
+                    stream.index()
+                );
+                continue;
+            }
+
             let index = stream.index();
             let track_index = video_stream_indices.len();
             video_stream_indices.push(index);
 
             let codec_parameters = stream.parameters();
-            let decoder_context =
-                CodecContext::from_parameters(codec_parameters).map_err(|error| {
-                    UnbundleError::FileOpen {
-                        path: canonical_path.clone(),
-                        reason: format!(
-                            "Failed to read video codec parameters for stream {index}: {error}"
-                        ),
-                    }
-                })?;
-            let video_decoder =
-                decoder_context
-                    .decoder()
-                    .video()
-                    .map_err(|error| UnbundleError::FileOpen {
-                        path: canonical_path.clone(),
-                        reason: format!(
-                            "Failed to create video decoder for stream {index}: {error}"
-                        ),
-                    })?;
+            let decoder_context = match CodecContext::from_parameters(codec_parameters) {
+                Ok(ctx) => ctx,
+                Err(error) => {
+                    log::warn!(
+                        "Skipping video stream {index}: \
+                         failed to read codec parameters: {error}"
+                    );
+                    video_stream_indices.pop();
+                    continue;
+                }
+            };
+            let video_decoder = match decoder_context.decoder().video() {
+                Ok(dec) => dec,
+                Err(error) => {
+                    log::warn!(
+                        "Skipping video stream {index}: \
+                         failed to create decoder: {error}"
+                    );
+                    video_stream_indices.pop();
+                    continue;
+                }
+            };
 
             let width = video_decoder.width();
             let height = video_decoder.height();
@@ -292,25 +310,28 @@ impl MediaFile {
             audio_stream_indices.push(index);
 
             let codec_parameters = stream.parameters();
-            let decoder_context =
-                CodecContext::from_parameters(codec_parameters).map_err(|error| {
-                    UnbundleError::FileOpen {
-                        path: canonical_path.clone(),
-                        reason: format!(
-                            "Failed to read audio codec parameters for stream {index}: {error}"
-                        ),
-                    }
-                })?;
-            let audio_decoder =
-                decoder_context
-                    .decoder()
-                    .audio()
-                    .map_err(|error| UnbundleError::FileOpen {
-                        path: canonical_path.clone(),
-                        reason: format!(
-                            "Failed to create audio decoder for stream {index}: {error}"
-                        ),
-                    })?;
+            let decoder_context = match CodecContext::from_parameters(codec_parameters) {
+                Ok(ctx) => ctx,
+                Err(error) => {
+                    log::warn!(
+                        "Skipping audio stream {index}: \
+                         failed to read codec parameters: {error}"
+                    );
+                    audio_stream_indices.pop();
+                    continue;
+                }
+            };
+            let audio_decoder = match decoder_context.decoder().audio() {
+                Ok(dec) => dec,
+                Err(error) => {
+                    log::warn!(
+                        "Skipping audio stream {index}: \
+                         failed to create decoder: {error}"
+                    );
+                    audio_stream_indices.pop();
+                    continue;
+                }
+            };
 
             let sample_rate = audio_decoder.rate();
             let channels = audio_decoder.channels();
