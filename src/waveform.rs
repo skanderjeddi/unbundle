@@ -135,13 +135,13 @@ pub(crate) fn generate_waveform_impl(
     .map_err(|e| UnbundleError::WaveformDecodeError(format!("Failed to create resampler: {e}")))?;
 
     // Compute time-range boundaries in stream time base.
-    let start_pts: Option<i64> = config.start.map(|d| {
-        (d.as_secs_f64() * time_base.denominator() as f64 / time_base.numerator().max(1) as f64)
-            as i64
+    let start_pts: Option<i64> = config.start.map(|duration| {
+        (duration.as_secs_f64() * time_base.denominator() as f64
+            / time_base.numerator().max(1) as f64) as i64
     });
-    let end_pts: Option<i64> = config.end.map(|d| {
-        (d.as_secs_f64() * time_base.denominator() as f64 / time_base.numerator().max(1) as f64)
-            as i64
+    let end_pts: Option<i64> = config.end.map(|duration| {
+        (duration.as_secs_f64() * time_base.denominator() as f64
+            / time_base.numerator().max(1) as f64) as i64
     });
 
     // Collect all mono f32 samples.
@@ -156,18 +156,18 @@ pub(crate) fn generate_waveform_impl(
 
         // Time-range filtering at the packet level.
         if let Some(end) = end_pts {
-            if let Some(pkt_pts) = packet.pts() {
-                if pkt_pts > end {
+            if let Some(packet_pts) = packet.pts() {
+                if packet_pts > end {
                     break;
                 }
             }
         }
         if let Some(start) = start_pts {
-            if let Some(pkt_pts) = packet.pts() {
+            if let Some(packet_pts) = packet.pts() {
                 // Skip packets clearly before the start. Their decoded
                 // samples may still overlap, but this is a coarse filter.
-                if let Some(dur) = packet.duration().checked_add(pkt_pts as i64) {
-                    if dur < start {
+                if let Some(packet_end_pts) = packet.duration().checked_add(packet_pts as i64) {
+                    if packet_end_pts < start {
                         continue;
                     }
                 }
@@ -194,10 +194,11 @@ pub(crate) fn generate_waveform_impl(
                 let flush_frame = AudioFrame::empty();
                 if resampler.run(&flush_frame, &mut resampled_frame).is_ok() {
                     let data = resampled_frame.data(0);
-                    let sc = resampled_frame.samples();
-                    let fs: &[f32] =
-                        unsafe { std::slice::from_raw_parts(data.as_ptr() as *const f32, sc) };
-                    all_samples.extend_from_slice(fs);
+                    let flush_sample_count = resampled_frame.samples();
+                    let flush_samples: &[f32] = unsafe {
+                        std::slice::from_raw_parts(data.as_ptr() as *const f32, flush_sample_count)
+                    };
+                    all_samples.extend_from_slice(flush_samples);
                 }
             }
         }
@@ -207,35 +208,35 @@ pub(crate) fn generate_waveform_impl(
     let duration = Duration::from_secs_f64(total_samples as f64 / sample_rate as f64);
 
     // Bucket into bins.
-    let num_bins = config.bins.max(1);
-    let samples_per_bin = (all_samples.len() as f64 / num_bins as f64).ceil() as usize;
+    let bin_count = config.bins.max(1);
+    let samples_per_bin = (all_samples.len() as f64 / bin_count as f64).ceil() as usize;
 
-    let mut bins = Vec::with_capacity(num_bins);
+    let mut bins = Vec::with_capacity(bin_count);
     for chunk in all_samples.chunks(samples_per_bin.max(1)) {
-        let mut min_val = f32::INFINITY;
-        let mut max_val = f32::NEG_INFINITY;
-        let mut sum_sq = 0.0_f64;
+        let mut min_value = f32::INFINITY;
+        let mut max_value = f32::NEG_INFINITY;
+        let mut sum_squared = 0.0_f64;
 
-        for &s in chunk {
-            if s < min_val {
-                min_val = s;
+        for &sample in chunk {
+            if sample < min_value {
+                min_value = sample;
             }
-            if s > max_val {
-                max_val = s;
+            if sample > max_value {
+                max_value = sample;
             }
-            sum_sq += (s as f64) * (s as f64);
+            sum_squared += (sample as f64) * (sample as f64);
         }
 
-        let rms = (sum_sq / chunk.len() as f64).sqrt() as f32;
+        let rms = (sum_squared / chunk.len() as f64).sqrt() as f32;
         bins.push(WaveformBin {
-            min: min_val,
-            max: max_val,
+            min: min_value,
+            max: max_value,
             rms,
         });
     }
 
-    // Pad to exactly num_bins if the last chunks were short.
-    while bins.len() < num_bins {
+    // Pad to exactly bin_count if the last chunks were short.
+    while bins.len() < bin_count {
         bins.push(WaveformBin {
             min: 0.0,
             max: 0.0,

@@ -180,7 +180,7 @@ impl MediaFile {
 
             let codec_parameters = stream.parameters();
             let decoder_context = match CodecContext::from_parameters(codec_parameters) {
-                Ok(ctx) => ctx,
+                Ok(context) => context,
                 Err(error) => {
                     log::warn!(
                         "Skipping video stream {index}: \
@@ -191,7 +191,7 @@ impl MediaFile {
                 }
             };
             let video_decoder = match decoder_context.decoder().video() {
-                Ok(dec) => dec,
+                Ok(decoder) => decoder,
                 Err(error) => {
                     log::warn!(
                         "Skipping video stream {index}: \
@@ -311,7 +311,7 @@ impl MediaFile {
 
             let codec_parameters = stream.parameters();
             let decoder_context = match CodecContext::from_parameters(codec_parameters) {
-                Ok(ctx) => ctx,
+                Ok(context) => context,
                 Err(error) => {
                     log::warn!(
                         "Skipping audio stream {index}: \
@@ -322,7 +322,7 @@ impl MediaFile {
                 }
             };
             let audio_decoder = match decoder_context.decoder().audio() {
-                Ok(dec) => dec,
+                Ok(decoder) => decoder,
                 Err(error) => {
                     log::warn!(
                         "Skipping audio stream {index}: \
@@ -390,8 +390,8 @@ impl MediaFile {
             let decoder_context = CodecContext::from_parameters(codec_parameters).ok();
 
             let codec_name = decoder_context
-                .and_then(|ctx| {
-                    let name = ctx.id().name();
+                .and_then(|context| {
+                    let name = context.id().name();
                     if name.is_empty() {
                         None
                     } else {
@@ -526,9 +526,9 @@ impl MediaFile {
     /// use unbundle::{MediaFile, UnbundleError};
     ///
     /// let mut unbundler = MediaFile::open("input.mp4")?;
-    /// for pkt in unbundler.packet_iter()? {
-    ///     let pkt = pkt?;
-    ///     println!("stream={} pts={:?} key={}", pkt.stream_index, pkt.pts, pkt.is_keyframe);
+    /// for packet in unbundler.packet_iter()? {
+    ///     let packet = packet?;
+    ///     println!("stream={} pts={:?} key={}", packet.stream_index, packet.pts, packet.is_keyframe);
     /// }
     /// # Ok::<(), UnbundleError>(())
     /// ```

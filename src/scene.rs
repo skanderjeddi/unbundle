@@ -199,7 +199,7 @@ pub(crate) fn detect_scenes_impl(
     // We still probe to get a reasonable starting format for the buffer
     // filter, but a `format` filter in the chain normalises any mid-stream
     // pixel-format changes to YUV420P before they reach `scdet`.
-    let mut actual_pix_fmt: Option<i32> = None;
+    let mut actual_pixel_format: Option<i32> = None;
 
     'probe: for (stream, packet) in unbundler.input_context.packets() {
         if stream.index() != video_stream_index {
@@ -211,21 +211,21 @@ pub(crate) fn detect_scenes_impl(
             .map_err(|e| UnbundleError::VideoDecodeError(e.to_string()))?;
 
         if decoder.receive_frame(&mut decoded_frame).is_ok() {
-            actual_pix_fmt = Some(AVPixelFormat::from(decoded_frame.format()) as i32);
+            actual_pixel_format = Some(AVPixelFormat::from(decoded_frame.format()) as i32);
             break 'probe;
         }
     }
 
-    let pix_fmt = actual_pix_fmt.unwrap_or(AVPixelFormat::from(decoder.format()) as i32);
+    let pixel_format = actual_pixel_format.unwrap_or(AVPixelFormat::from(decoder.format()) as i32);
 
     // Read colorspace and color range from the probed frame so the buffer
     // filter matches the decoded frame properties exactly. We read the raw
     // AVFrame fields directly because the safe Rust enum accessors have the
     // same discriminant-mismatch problem as Pixel.
-    let (color_space, color_range) = if actual_pix_fmt.is_some() {
+    let (color_space, color_range) = if actual_pixel_format.is_some() {
         unsafe {
-            let ptr = decoded_frame.as_ptr();
-            ((*ptr).colorspace as i32, (*ptr).color_range as i32)
+            let pointer = decoded_frame.as_ptr();
+            ((*pointer).colorspace as i32, (*pointer).color_range as i32)
         }
     } else {
         (2, 0) // AVCOL_SPC_UNSPECIFIED, AVCOL_RANGE_UNSPECIFIED
@@ -244,7 +244,7 @@ pub(crate) fn detect_scenes_impl(
         "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect=1/1:colorspace={}:range={}",
         decoder.width(),
         decoder.height(),
-        pix_fmt,
+        pixel_format,
         time_base.numerator(),
         time_base.denominator(),
         color_space,
@@ -335,7 +335,7 @@ pub(crate) fn detect_scenes_impl(
     };
 
     // Feed the first frame we already decoded (still in decoded_frame).
-    if actual_pix_fmt.is_some() {
+    if actual_pixel_format.is_some() {
         feed_and_collect(&mut graph, &decoded_frame, &mut scenes)?;
 
         // The decoder may still have buffered frames from the first packet.

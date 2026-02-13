@@ -46,20 +46,20 @@ pub(crate) fn parallel_extract_frames(
     let chunks = split_into_runs(frame_numbers, 30);
 
     let path = file_path.clone();
-    let cfg = config.clone();
+    let config = config.clone();
 
     let results: Result<Vec<Vec<(u64, DynamicImage)>>, UnbundleError> = chunks
         .into_par_iter()
         .map(|chunk| {
-            if cfg.is_cancelled() {
+            if config.is_cancelled() {
                 return Err(UnbundleError::Cancelled);
             }
-            decode_chunk(&path, &chunk, &cfg)
+            decode_chunk(&path, &chunk, &config)
         })
         .collect();
 
     let mut all_frames: Vec<(u64, DynamicImage)> = results?.into_iter().flatten().collect();
-    all_frames.sort_by_key(|(num, _)| *num);
+    all_frames.sort_by_key(|(number, _)| *number);
     Ok(all_frames)
 }
 
@@ -73,9 +73,9 @@ fn split_into_runs(frame_numbers: &[u64], gap_threshold: u64) -> Vec<Vec<u64>> {
     let mut runs: Vec<Vec<u64>> = Vec::new();
     let mut current_run: Vec<u64> = vec![frame_numbers[0]];
 
-    for &num in &frame_numbers[1..] {
-        if num - *current_run.last().unwrap() <= gap_threshold {
-            current_run.push(num);
+    for &number in &frame_numbers[1..] {
+        if number - *current_run.last().unwrap() <= gap_threshold {
+            current_run.push(number);
         } else {
             runs.push(std::mem::take(&mut current_run));
             current_run.push(num);

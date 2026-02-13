@@ -540,7 +540,7 @@ let frames = unbundler.video().frames(FrameRange::Interval(30))?;
 
 let config = VideoEncoderOptions::default()
     .resolution(1920, 1080)
-    .fps(24)
+    .frames_per_second(24)
     .codec(VideoCodec::H264);
 VideoEncoder::new(config).write("output.mp4", &frames)?;
 ```
@@ -565,8 +565,8 @@ println!(
 use unbundle::MediaFile;
 
 let mut unbundler = MediaFile::open("input.mp4")?;
-let vfr = unbundler.video().analyze_variable_framerate()?;
-println!("VFR: {}, mean FPS: {:.2}", vfr.is_vfr, vfr.mean_fps);
+let analysis = unbundler.video().analyze_variable_framerate()?;
+println!("VFR: {}, mean FPS: {:.2}", analysis.is_variable_frame_rate, analysis.mean_frames_per_second);
 ```
 
 ### Packet Inspection
@@ -575,10 +575,10 @@ println!("VFR: {}, mean FPS: {:.2}", vfr.is_vfr, vfr.mean_fps);
 use unbundle::MediaFile;
 
 let mut unbundler = MediaFile::open("input.mp4")?;
-for pkt in unbundler.packet_iter()? {
-    let pkt = pkt?;
+for packet in unbundler.packet_iter()? {
+    let packet = packet?;
     println!("stream={} pts={:?} size={} key={}",
-        pkt.stream_index, pkt.pts, pkt.size, pkt.is_keyframe);
+        packet.stream_index, packet.pts, packet.size, packet.is_keyframe);
 }
 ```
 

@@ -23,8 +23,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use ffmpeg_next::{
-    Subtitle, codec::context::Context as CodecContext, subtitle::Bitmap as SubtitleBitmap,
-    subtitle::Rect,
+    Subtitle,
+    codec::context::Context as CodecContext,
+    subtitle::{Bitmap as SubtitleBitmap, Rect},
 };
 use image::{DynamicImage, RgbaImage};
 
@@ -144,10 +145,10 @@ impl<'a> SubtitleHandle<'a> {
                 pts.max(0) as u64
             } else {
                 // Fall back to packet PTS converted via time base.
-                let pkt_pts = packet.pts().unwrap_or(0).max(0) as u64;
-                let num = time_base.numerator() as u64;
-                let den = time_base.denominator().max(1) as u64;
-                pkt_pts * num * 1_000_000 / den
+                let packet_pts = packet.pts().unwrap_or(0).max(0) as u64;
+                let numerator = time_base.numerator() as u64;
+                let denominator = time_base.denominator().max(1) as u64;
+                packet_pts * numerator * 1_000_000 / denominator
             };
 
             let start_offset_ms = subtitle.start() as u64;
@@ -163,14 +164,14 @@ impl<'a> SubtitleHandle<'a> {
 
             for rect in subtitle.rects() {
                 match rect {
-                    Rect::Text(t) => {
-                        let s = t.get().trim().to_string();
-                        if !s.is_empty() {
-                            text_parts.push(s);
+                    Rect::Text(text_ref) => {
+                        let subtitle_text = text_ref.get().trim().to_string();
+                        if !subtitle_text.is_empty() {
+                            text_parts.push(subtitle_text);
                         }
                     }
-                    Rect::Ass(a) => {
-                        let raw = a.get();
+                    Rect::Ass(ass_ref) => {
+                        let raw = ass_ref.get();
                         let cleaned = strip_ass_tags(raw);
                         if !cleaned.is_empty() {
                             text_parts.push(cleaned);
@@ -460,10 +461,10 @@ impl<'a> SubtitleHandle<'a> {
             let base_pts_us = if let Some(pts) = subtitle.pts() {
                 pts.max(0) as u64
             } else {
-                let pkt_pts = packet.pts().unwrap_or(0).max(0) as u64;
-                let num = time_base.numerator() as u64;
-                let den = time_base.denominator().max(1) as u64;
-                pkt_pts * num * 1_000_000 / den
+                let packet_pts = packet.pts().unwrap_or(0).max(0) as u64;
+                let numerator = time_base.numerator() as u64;
+                let denominator = time_base.denominator().max(1) as u64;
+                packet_pts * numerator * 1_000_000 / denominator
             };
 
             let start_offset_ms = subtitle.start() as u64;
@@ -475,13 +476,13 @@ impl<'a> SubtitleHandle<'a> {
                 Duration::from_micros(base_pts_us) + Duration::from_millis(end_offset_ms);
 
             for rect in subtitle.rects() {
-                if let Rect::Bitmap(ref bmp) = rect {
-                    if let Some(image) = decode_bitmap_rect(bmp) {
+                if let Rect::Bitmap(ref bitmap) = rect {
+                    if let Some(image) = decode_bitmap_rect(bitmap) {
                         events.push(BitmapSubtitleEvent {
                             start_time,
                             end_time,
-                            x: bmp.x() as u32,
-                            y: bmp.y() as u32,
+                            x: bitmap.x() as u32,
+                            y: bitmap.y() as u32,
                             image,
                             index: event_index,
                         });
@@ -514,49 +515,50 @@ pub struct BitmapSubtitleEvent {
 }
 
 /// Decode a PAL8 bitmap subtitle rect into an RGBA [`DynamicImage`].
-fn decode_bitmap_rect(bmp: &SubtitleBitmap<'_>) -> Option<DynamicImage> {
-    let w = bmp.width();
-    let h = bmp.height();
-    if w == 0 || h == 0 {
+fn decode_bitmap_rect(bitmap: &SubtitleBitmap<'_>) -> Option<DynamicImage> {
+    let width = bitmap.width();
+    let height = bitmap.height();
+    if width == 0 || height == 0 {
         return None;
     }
 
-    let nb_colors = bmp.colors();
+    let color_count = bitmap.colors();
 
     // Safety: we access the raw AVSubtitleRect to read data[0] (pixel indices)
     // and data[1] (RGBA palette). This is the only way on FFmpeg 5.0+.
     unsafe {
-        let ptr = bmp.as_ptr();
-        let data0 = (*ptr).data[0]; // pixel indices
-        let data1 = (*ptr).data[1]; // RGBA palette
-        let linesize = (*ptr).linesize[0] as usize;
+        let pointer = bitmap.as_ptr();
+        let pixel_data = (*pointer).data[0]; // pixel indices
+        let palette_data = (*pointer).data[1]; // RGBA palette
+        let linesize = (*pointer).linesize[0] as usize;
 
-        if data0.is_null() || data1.is_null() {
+        if pixel_data.is_null() || palette_data.is_null() {
             return None;
         }
 
         // Read palette (up to 256 RGBA entries).
-        let palette_len = nb_colors.min(256);
-        let palette_bytes = std::slice::from_raw_parts(data1 as *const u8, palette_len * 4);
+        let palette_length = color_count.min(256);
+        let palette_bytes =
+            std::slice::from_raw_parts(palette_data as *const u8, palette_length * 4);
 
-        let mut rgba_buf = vec![0u8; (w * h * 4) as usize];
+        let mut rgba_buffer = vec![0u8; (width * height * 4) as usize];
 
-        for row in 0..h as usize {
-            for col in 0..w as usize {
-                let idx = *data0.add(row * linesize + col) as usize;
-                let dst = (row * w as usize + col) * 4;
-                if idx < palette_len {
-                    rgba_buf[dst] = palette_bytes[idx * 4];
-                    rgba_buf[dst + 1] = palette_bytes[idx * 4 + 1];
-                    rgba_buf[dst + 2] = palette_bytes[idx * 4 + 2];
-                    rgba_buf[dst + 3] = palette_bytes[idx * 4 + 3];
+        for row in 0..height as usize {
+            for column in 0..width as usize {
+                let palette_index = *pixel_data.add(row * linesize + column) as usize;
+                let destination_offset = (row * width as usize + column) * 4;
+                if palette_index < palette_length {
+                    rgba_buffer[destination_offset] = palette_bytes[palette_index * 4];
+                    rgba_buffer[destination_offset + 1] = palette_bytes[palette_index * 4 + 1];
+                    rgba_buffer[destination_offset + 2] = palette_bytes[palette_index * 4 + 2];
+                    rgba_buffer[destination_offset + 3] = palette_bytes[palette_index * 4 + 3];
                 }
                 // else: leave as transparent black (0,0,0,0).
             }
         }
 
-        let img = RgbaImage::from_raw(w, h, rgba_buf)?;
-        Some(DynamicImage::ImageRgba8(img))
+        let rgba_image = RgbaImage::from_raw(width, height, rgba_buffer)?;
+        Some(DynamicImage::ImageRgba8(rgba_image))
     }
 }
 
@@ -611,22 +613,22 @@ fn format_subtitles(entries: &[SubtitleEvent], format: SubtitleFormat) -> String
 }
 
 /// Format a duration as SRT timestamp (HH:MM:SS,mmm).
-fn format_srt_timestamp(d: Duration) -> String {
-    let total_secs = d.as_secs();
+fn format_srt_timestamp(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
     let hours = total_secs / 3600;
     let minutes = (total_secs % 3600) / 60;
     let seconds = total_secs % 60;
-    let millis = d.subsec_millis();
+    let millis = duration.subsec_millis();
     format!("{hours:02}:{minutes:02}:{seconds:02},{millis:03}")
 }
 
 /// Format a duration as WebVTT timestamp (HH:MM:SS.mmm).
-fn format_vtt_timestamp(d: Duration) -> String {
-    let total_secs = d.as_secs();
+fn format_vtt_timestamp(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
     let hours = total_secs / 3600;
     let minutes = (total_secs % 3600) / 60;
     let seconds = total_secs % 60;
-    let millis = d.subsec_millis();
+    let millis = duration.subsec_millis();
     format!("{hours:02}:{minutes:02}:{seconds:02}.{millis:03}")
 }
 
@@ -641,17 +643,17 @@ fn strip_ass_tags(input: &str) -> String {
     let text = if input.starts_with("Dialogue:") {
         // Find the 9th comma (text starts after it).
         let mut comma_count = 0;
-        let mut start_idx = 0;
+        let mut start_index = 0;
         for (i, c) in input.char_indices() {
             if c == ',' {
                 comma_count += 1;
                 if comma_count == 9 {
-                    start_idx = i + 1;
+                    start_index = i + 1;
                     break;
                 }
             }
         }
-        &input[start_idx..]
+        &input[start_index..]
     } else {
         input
     };

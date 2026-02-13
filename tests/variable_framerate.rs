@@ -23,7 +23,7 @@ fn analyze_variable_framerate_on_cfr_video() {
 
     // The test fixture is 30 fps constant.
     assert!(
-        !analysis.is_vfr,
+        !analysis.is_variable_frame_rate,
         "expected constant frame rate for test fixture"
     );
     assert!(
@@ -31,9 +31,9 @@ fn analyze_variable_framerate_on_cfr_video() {
         "should have analyzed some frames"
     );
     assert!(
-        (analysis.mean_fps - 30.0).abs() < 2.0,
+        (analysis.mean_frames_per_second - 30.0).abs() < 2.0,
         "expected ~30 fps, got {}",
-        analysis.mean_fps
+        analysis.mean_frames_per_second
     );
 }
 
@@ -50,8 +50,8 @@ fn vfr_analysis_field_consistency() {
         .analyze_variable_framerate()
         .expect("vfr analysis");
 
-    assert!(analysis.min_fps <= analysis.mean_fps);
-    assert!(analysis.mean_fps <= analysis.max_fps);
+    assert!(analysis.min_frames_per_second <= analysis.mean_frames_per_second);
+    assert!(analysis.mean_frames_per_second <= analysis.max_frames_per_second);
     assert!(analysis.mean_frame_duration > 0.0);
     assert!(analysis.frame_duration_stddev >= 0.0);
 }

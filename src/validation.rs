@@ -163,11 +163,11 @@ pub(crate) fn validate_metadata(metadata: &MediaMetadata) -> ValidationReport {
     }
 
     // ── Subtitle info ──────────────────────────────────────────────
-    if let Some(sub) = &metadata.subtitle {
-        let lang = sub.language.as_deref().unwrap_or("unknown language");
+    if let Some(subtitle) = &metadata.subtitle {
+        let language = subtitle.language.as_deref().unwrap_or("unknown language");
         report
             .info
-            .push(format!("Subtitle: {} ({})", sub.codec, lang,));
+            .push(format!("Subtitle: {} ({})", subtitle.codec, language,));
     }
 
     if let Some(tracks) = &metadata.subtitle_tracks {

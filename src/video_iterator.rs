@@ -53,7 +53,7 @@ pub struct FrameIterator<'a> {
     /// Index into `target_frames` pointing to the next frame to yield.
     target_index: usize,
     time_base: Rational,
-    fps: f64,
+    frames_per_second: f64,
     output_config: FrameOutputOptions,
     target_width: u32,
     target_height: u32,
@@ -90,7 +90,7 @@ impl<'a> FrameIterator<'a> {
             .as_ref()
             .ok_or(UnbundleError::NoVideoStream)?;
 
-        let fps = video_metadata.frames_per_second;
+        let frames_per_second = video_metadata.frames_per_second;
         let (target_width, target_height) =
             output_config.resolve_dimensions(video_metadata.width, video_metadata.height);
         let output_pixel = output_config.pixel_format.to_ffmpeg_pixel();
@@ -116,8 +116,11 @@ impl<'a> FrameIterator<'a> {
 
         // Seek to the first requested frame.
         if let Some(&first) = frame_numbers.first() {
-            let seek_ts = crate::conversion::frame_number_to_seek_timestamp(first, fps);
-            let _ = unbundler.input_context.seek(seek_ts, ..seek_ts);
+            let seek_timestamp =
+                crate::conversion::frame_number_to_seek_timestamp(first, frames_per_second);
+            let _ = unbundler
+                .input_context
+                .seek(seek_timestamp, ..seek_timestamp);
         }
 
         Ok(Self {
@@ -128,7 +131,7 @@ impl<'a> FrameIterator<'a> {
             target_frames: frame_numbers,
             target_index: 0,
             time_base,
-            fps,
+            frames_per_second,
             output_config,
             target_width,
             target_height,
@@ -149,31 +152,34 @@ impl<'a> FrameIterator<'a> {
 
         match self.output_config.pixel_format {
             PixelFormat::Rgb8 => {
-                let buf = crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 3);
-                let img = RgbImage::from_raw(width, height, buf).ok_or_else(|| {
+                let buffer =
+                    crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 3);
+                let rgb_image = RgbImage::from_raw(width, height, buffer).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct RGB image from decoded frame data".to_string(),
                     )
                 })?;
-                Ok(DynamicImage::ImageRgb8(img))
+                Ok(DynamicImage::ImageRgb8(rgb_image))
             }
             PixelFormat::Rgba8 => {
-                let buf = crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 4);
-                let img = RgbaImage::from_raw(width, height, buf).ok_or_else(|| {
+                let buffer =
+                    crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 4);
+                let rgba_image = RgbaImage::from_raw(width, height, buffer).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct RGBA image from decoded frame data".to_string(),
                     )
                 })?;
-                Ok(DynamicImage::ImageRgba8(img))
+                Ok(DynamicImage::ImageRgba8(rgba_image))
             }
             PixelFormat::Gray8 => {
-                let buf = crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 1);
-                let img = GrayImage::from_raw(width, height, buf).ok_or_else(|| {
+                let buffer =
+                    crate::conversion::frame_to_buffer(&self.scaled_frame, width, height, 1);
+                let gray_image = GrayImage::from_raw(width, height, buffer).ok_or_else(|| {
                     UnbundleError::VideoDecodeError(
                         "Failed to construct grayscale image from decoded frame data".to_string(),
                     )
                 })?;
-                Ok(DynamicImage::ImageLuma8(img))
+                Ok(DynamicImage::ImageLuma8(gray_image))
             }
         }
     }
@@ -191,8 +197,11 @@ impl Iterator for FrameIterator<'_> {
             // Try to receive a frame the decoder has already produced.
             if self.decoder.receive_frame(&mut self.decoded_frame).is_ok() {
                 let pts = self.decoded_frame.pts().unwrap_or(0);
-                let current_frame =
-                    crate::conversion::pts_to_frame_number(pts, self.time_base, self.fps);
+                let current_frame = crate::conversion::pts_to_frame_number(
+                    pts,
+                    self.time_base,
+                    self.frames_per_second,
+                );
 
                 // Skip targets we have already passed.
                 while self.target_index < self.target_frames.len()
@@ -209,9 +218,9 @@ impl Iterator for FrameIterator<'_> {
                 if current_frame == self.target_frames[self.target_index] {
                     match self.convert_current_frame() {
                         Ok(image) => {
-                            let frame_num = current_frame;
+                            let frame_number = current_frame;
                             self.target_index += 1;
-                            return Some(Ok((frame_num, image)));
+                            return Some(Ok((frame_number, image)));
                         }
                         Err(e) => {
                             self.done = true;

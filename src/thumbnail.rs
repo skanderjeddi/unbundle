@@ -6,8 +6,7 @@
 
 use std::time::Duration;
 
-use image::imageops::FilterType;
-use image::{DynamicImage, GenericImage};
+use image::{DynamicImage, GenericImage, imageops::FilterType};
 
 use crate::configuration::ExtractOptions;
 use crate::error::UnbundleError;

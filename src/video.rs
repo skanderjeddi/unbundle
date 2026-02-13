@@ -21,18 +21,18 @@ use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 
 #[cfg(feature = "gif")]
 use crate::gif::GifOptions;
-use crate::keyframe::{GroupOfPicturesInfo, KeyFrameMetadata};
 #[cfg(feature = "scene")]
 use crate::scene::{SceneChange, SceneDetectionOptions};
 #[cfg(feature = "async")]
 use crate::stream::FrameStream;
-use crate::variable_framerate::VariableFrameRateAnalysis;
 use crate::{
     configuration::{ExtractOptions, FrameOutputOptions, PixelFormat},
     error::UnbundleError,
+    keyframe::{GroupOfPicturesInfo, KeyFrameMetadata},
     metadata::VideoMetadata,
     progress::{OperationType, ProgressTracker},
     unbundle::MediaFile,
+    variable_framerate::VariableFrameRateAnalysis,
     video_iterator::FrameIterator,
 };
 
@@ -754,8 +754,8 @@ impl<'a> VideoHandle<'a> {
             range,
             &video_metadata,
             config,
-            &mut |_frame_number, img, info| {
-                results.push((img, info));
+            &mut |_frame_number, frame_image, info| {
+                results.push((frame_image, info));
                 tracker.advance(Some(_frame_number), None);
                 Ok(())
             },
@@ -941,11 +941,16 @@ impl<'a> VideoHandle<'a> {
 
         let mut frames = Vec::with_capacity(total.unwrap_or(0) as usize);
 
-        self.dispatch_range(range, &video_metadata, config, &mut |frame_number, img| {
-            frames.push(img);
-            tracker.advance(Some(frame_number), None);
-            Ok(())
-        })?;
+        self.dispatch_range(
+            range,
+            &video_metadata,
+            config,
+            &mut |frame_number, frame_image| {
+                frames.push(frame_image);
+                tracker.advance(Some(frame_number), None);
+                Ok(())
+            },
+        )?;
 
         tracker.finish();
         Ok(frames)
@@ -1008,11 +1013,16 @@ impl<'a> VideoHandle<'a> {
             config.batch_size,
         );
 
-        self.dispatch_range(range, &video_metadata, config, &mut |frame_number, img| {
-            callback(frame_number, img)?;
-            tracker.advance(Some(frame_number), None);
-            Ok(())
-        })?;
+        self.dispatch_range(
+            range,
+            &video_metadata,
+            config,
+            &mut |frame_number, frame_image| {
+                callback(frame_number, frame_image)?;
+                tracker.advance(Some(frame_number), None);
+                Ok(())
+            },
+        )?;
 
         tracker.finish();
         Ok(())
@@ -1056,11 +1066,11 @@ impl<'a> VideoHandle<'a> {
             .ok_or(UnbundleError::NoVideoStream)?
             .clone();
 
-        let scd_config = config.unwrap_or_default();
+        let scene_config = config.unwrap_or_default();
         crate::scene::detect_scenes_impl(
             self.unbundler,
             &video_metadata,
-            &scd_config,
+            &scene_config,
             None,
             self.stream_index,
         )
@@ -1073,7 +1083,7 @@ impl<'a> VideoHandle<'a> {
     #[cfg(feature = "scene")]
     pub fn detect_scenes_with_options(
         &mut self,
-        scd_config: Option<SceneDetectionOptions>,
+        scene_config: Option<SceneDetectionOptions>,
         config: &ExtractOptions,
     ) -> Result<Vec<SceneChange>, UnbundleError> {
         let video_metadata = self
@@ -1084,12 +1094,12 @@ impl<'a> VideoHandle<'a> {
             .ok_or(UnbundleError::NoVideoStream)?
             .clone();
 
-        let scd_config = scd_config.unwrap_or_default();
+        let scene_config = scene_config.unwrap_or_default();
         let cancel_check: Box<dyn Fn() -> bool> = Box::new(|| config.is_cancelled());
         crate::scene::detect_scenes_impl(
             self.unbundler,
             &video_metadata,
-            &scd_config,
+            &scene_config,
             Some(&*cancel_check),
             self.stream_index,
         )
@@ -1137,8 +1147,9 @@ impl<'a> VideoHandle<'a> {
             .ok_or(UnbundleError::NoVideoStream)?
             .clone();
 
-        let foc = gif_config.to_frame_output_config(video_metadata.width, video_metadata.height);
-        let extraction_config = ExtractOptions::default().with_frame_output(foc);
+        let frame_output_config =
+            gif_config.to_frame_output_config(video_metadata.width, video_metadata.height);
+        let extraction_config = ExtractOptions::default().with_frame_output(frame_output_config);
         let frames = self.frames_with_options(range, &extraction_config)?;
         crate::gif::encode_gif(path, &frames, gif_config)
     }
@@ -1165,8 +1176,9 @@ impl<'a> VideoHandle<'a> {
             .ok_or(UnbundleError::NoVideoStream)?
             .clone();
 
-        let foc = gif_config.to_frame_output_config(video_metadata.width, video_metadata.height);
-        let extraction_config = ExtractOptions::default().with_frame_output(foc);
+        let frame_output_config =
+            gif_config.to_frame_output_config(video_metadata.width, video_metadata.height);
+        let extraction_config = ExtractOptions::default().with_frame_output(frame_output_config);
         let frames = self.frames_with_options(range, &extraction_config)?;
         crate::gif::encode_gif_to_memory(&frames, gif_config)
     }
@@ -1228,8 +1240,8 @@ impl<'a> VideoHandle<'a> {
     /// use unbundle::{MediaFile, UnbundleError};
     ///
     /// let mut unbundler = MediaFile::open("input.mp4")?;
-    /// let vfr = unbundler.video().analyze_variable_framerate()?;
-    /// println!("VFR: {}, mean FPS: {:.2}", vfr.is_vfr, vfr.mean_fps);
+    /// let analysis = unbundler.video().analyze_variable_framerate()?;
+    /// println!("VFR: {}, mean FPS: {:.2}", analysis.is_variable_frame_rate, analysis.mean_frames_per_second);
     /// # Ok::<(), UnbundleError>(())
     /// ```
     pub fn analyze_variable_framerate(
@@ -1527,7 +1539,10 @@ impl<'a> VideoHandle<'a> {
             config,
         )?;
 
-        Ok(results.into_iter().map(|(_, img)| img).collect())
+        Ok(results
+            .into_iter()
+            .map(|(_, frame_image)| frame_image)
+            .collect())
     }
 
     /// Estimate the total number of frames a [`FrameRange`] will produce.
@@ -1551,9 +1566,11 @@ impl<'a> VideoHandle<'a> {
                 Some((video_metadata.frame_count + step - 1) / step)
             }
             FrameRange::TimeRange(start_time, end_time) => {
-                let fps = video_metadata.frames_per_second;
-                let start_frame = crate::conversion::timestamp_to_frame_number(*start_time, fps);
-                let end_frame = crate::conversion::timestamp_to_frame_number(*end_time, fps);
+                let frames_per_second = video_metadata.frames_per_second;
+                let start_frame =
+                    crate::conversion::timestamp_to_frame_number(*start_time, frames_per_second);
+                let end_frame =
+                    crate::conversion::timestamp_to_frame_number(*end_time, frames_per_second);
                 Some(end_frame.saturating_sub(start_frame) + 1)
             }
             FrameRange::TimeInterval(interval) => {
@@ -1566,13 +1583,15 @@ impl<'a> VideoHandle<'a> {
             }
             FrameRange::Specific(numbers) => Some(numbers.len() as u64),
             FrameRange::Segments(segments) => {
-                let fps = video_metadata.frames_per_second;
+                let frames_per_second = video_metadata.frames_per_second;
                 let total: u64 = segments
                     .iter()
                     .map(|(start, end)| {
-                        let sf = crate::conversion::timestamp_to_frame_number(*start, fps);
-                        let ef = crate::conversion::timestamp_to_frame_number(*end, fps);
-                        ef.saturating_sub(sf) + 1
+                        let start_frame =
+                            crate::conversion::timestamp_to_frame_number(*start, frames_per_second);
+                        let end_frame =
+                            crate::conversion::timestamp_to_frame_number(*end, frames_per_second);
+                        end_frame.saturating_sub(start_frame) + 1
                     })
                     .sum();
                 Some(total)
@@ -1761,9 +1780,9 @@ impl<'a> VideoHandle<'a> {
         let time_base = stream.time_base();
         let codec_parameters = stream.parameters();
         let decoder_context = CodecContext::from_parameters(codec_parameters)?;
-        let (mut decoder, hw_active) = create_video_decoder(decoder_context, config)?;
+        let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
 
-        let mut scaler: Option<ScalingContext> = if hw_active {
+        let mut scaler: Option<ScalingContext> = if hardware_active {
             None
         } else {
             Some(ScalingContext::get(
@@ -1803,7 +1822,8 @@ impl<'a> VideoHandle<'a> {
 
                 if current_frame_number >= start && current_frame_number <= end {
                     let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
-                    let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
                         &mut scaler,
@@ -1839,7 +1859,7 @@ impl<'a> VideoHandle<'a> {
 
             if current_frame_number >= start && current_frame_number <= end {
                 let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
-                let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
+                let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                 let source = transferred.as_ref().unwrap_or(&decoded_frame);
                 ensure_scaler(
                     &mut scaler,
@@ -1902,9 +1922,9 @@ impl<'a> VideoHandle<'a> {
         let time_base = stream.time_base();
         let codec_parameters = stream.parameters();
         let decoder_context = CodecContext::from_parameters(codec_parameters)?;
-        let (mut decoder, hw_active) = create_video_decoder(decoder_context, config)?;
+        let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
 
-        let mut scaler: Option<ScalingContext> = if hw_active {
+        let mut scaler: Option<ScalingContext> = if hardware_active {
             None
         } else {
             Some(ScalingContext::get(
@@ -1960,7 +1980,8 @@ impl<'a> VideoHandle<'a> {
                     && current_frame_number == sorted_numbers[target_index]
                 {
                     let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
-                    let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
                         &mut scaler,
@@ -2006,7 +2027,8 @@ impl<'a> VideoHandle<'a> {
                     && current_frame_number == sorted_numbers[target_index]
                 {
                     let info = build_frame_info(&decoded_frame, current_frame_number, time_base);
-                    let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
                         &mut scaler,
@@ -2065,11 +2087,11 @@ impl<'a> VideoHandle<'a> {
         let time_base = stream.time_base();
         let codec_parameters = stream.parameters();
         let decoder_context = CodecContext::from_parameters(codec_parameters)?;
-        let (mut decoder, hw_active) = create_video_decoder(decoder_context, config)?;
+        let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
 
-        // Defer scaler creation when HW accel is active — the software pixel
+        // Defer scaler creation when hardware accel is active — the software pixel
         // format is only known after the first frame transfer.
-        let mut scaler: Option<ScalingContext> = if hw_active {
+        let mut scaler: Option<ScalingContext> = if hardware_active {
             None
         } else {
             Some(ScalingContext::get(
@@ -2110,7 +2132,8 @@ impl<'a> VideoHandle<'a> {
                     crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 if current_frame_number >= start && current_frame_number <= end {
-                    let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
                         &mut scaler,
@@ -2147,7 +2170,7 @@ impl<'a> VideoHandle<'a> {
                 crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
             if current_frame_number >= start && current_frame_number <= end {
-                let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
+                let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                 let source = transferred.as_ref().unwrap_or(&decoded_frame);
                 ensure_scaler(
                     &mut scaler,
@@ -2218,9 +2241,9 @@ impl<'a> VideoHandle<'a> {
         let time_base = stream.time_base();
         let codec_parameters = stream.parameters();
         let decoder_context = CodecContext::from_parameters(codec_parameters)?;
-        let (mut decoder, hw_active) = create_video_decoder(decoder_context, config)?;
+        let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
 
-        let mut scaler: Option<ScalingContext> = if hw_active {
+        let mut scaler: Option<ScalingContext> = if hardware_active {
             None
         } else {
             Some(ScalingContext::get(
@@ -2278,7 +2301,8 @@ impl<'a> VideoHandle<'a> {
                 if target_index < sorted_numbers.len()
                     && current_frame_number == sorted_numbers[target_index]
                 {
-                    let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
                         &mut scaler,
@@ -2325,7 +2349,8 @@ impl<'a> VideoHandle<'a> {
                 if target_index < sorted_numbers.len()
                     && current_frame_number == sorted_numbers[target_index]
                 {
-                    let transferred = maybe_transfer_hw_frame(&decoded_frame, hw_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     let source = transferred.as_ref().unwrap_or(&decoded_frame);
                     ensure_scaler(
                         &mut scaler,
@@ -2353,19 +2378,19 @@ impl<'a> VideoHandle<'a> {
 
 /// Create a video decoder, optionally with hardware acceleration.
 ///
-/// Returns `(decoder, hw_active)` where `hw_active` indicates whether
-/// hardware decoding was successfully initialised.
+/// Returns `(decoder, hardware_active)` where `hardware_active` indicates
+/// whether hardware decoding was successfully initialised.
 fn create_video_decoder(
     codec_context: CodecContext,
     #[allow(unused_variables)] config: &ExtractOptions,
 ) -> Result<(VideoDecoder, bool), UnbundleError> {
     #[cfg(feature = "hardware")]
     {
-        let setup = crate::hardware_acceleration::try_create_hw_decoder(
+        let setup = crate::hardware_acceleration::try_create_hardware_decoder(
             codec_context,
             config.hardware_acceleration,
         )?;
-        Ok((setup.decoder, setup.hw_active))
+        Ok((setup.decoder, setup.hardware_active))
     }
     #[cfg(not(feature = "hardware"))]
     {
@@ -2374,17 +2399,18 @@ fn create_video_decoder(
     }
 }
 
-/// If HW decoding is active, transfer a decoded frame from GPU to system
-/// memory.  Returns `Some(sw_frame)` on successful transfer, `None` when
-/// the frame is already in system memory or when HW accel is not enabled.
-fn maybe_transfer_hw_frame(
+/// If hardware decoding is active, transfer a decoded frame from GPU to
+/// system memory.  Returns `Some(software_frame)` on successful transfer,
+/// `None` when the frame is already in system memory or when hardware
+/// acceleration is not enabled.
+fn maybe_transfer_hardware_frame(
     #[allow(unused_variables)] frame: &VideoFrame,
-    #[allow(unused_variables)] hw_active: bool,
+    #[allow(unused_variables)] hardware_active: bool,
 ) -> Result<Option<VideoFrame>, UnbundleError> {
     #[cfg(feature = "hardware")]
-    if hw_active {
-        match crate::hardware_acceleration::transfer_hw_frame(frame) {
-            Ok(sw_frame) => return Ok(Some(sw_frame)),
+    if hardware_active {
+        match crate::hardware_acceleration::transfer_hardware_frame(frame) {
+            Ok(software_frame) => return Ok(Some(software_frame)),
             Err(_) => return Ok(None), // frame already in system memory
         }
     }

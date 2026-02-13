@@ -88,13 +88,13 @@ impl GifOptions {
         _source_width: u32,
         _source_height: u32,
     ) -> FrameOutputOptions {
-        let mut foc = FrameOutputOptions::default();
+        let mut frame_output = FrameOutputOptions::default();
         // GIF is always RGBA8 for transparency / palette handling.
-        foc.pixel_format = PixelFormat::Rgba8;
-        if let Some(w) = self.width {
-            foc.width = Some(w);
+        frame_output.pixel_format = PixelFormat::Rgba8;
+        if let Some(width) = self.width {
+            frame_output.width = Some(width);
         }
-        foc
+        frame_output
     }
 }
 

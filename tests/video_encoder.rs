@@ -26,7 +26,7 @@ fn write_frames_to_mp4() {
         .expect("extract frames");
 
     let output = "tests/fixtures/test_writer_output.mp4";
-    let config = VideoEncoderOptions::default().fps(10);
+    let config = VideoEncoderOptions::default().frames_per_second(10);
     let result = VideoEncoder::new(config).write(output, &frames);
 
     // Skip if the H264 encoder is not available on this platform.
@@ -60,7 +60,7 @@ fn write_frames_with_resolution() {
 
     let output = "tests/fixtures/test_writer_resized.mp4";
     let config = VideoEncoderOptions::default()
-        .fps(5)
+        .frames_per_second(5)
         .resolution(160, 120)
         .codec(VideoCodec::H264);
     let result = VideoEncoder::new(config).write(output, &frames);
@@ -91,13 +91,13 @@ fn write_empty_frames_returns_error() {
 #[test]
 fn video_encoder_options_builder() {
     let config = VideoEncoderOptions::default()
-        .fps(24)
+        .frames_per_second(24)
         .resolution(1920, 1080)
         .codec(VideoCodec::H265)
         .crf(18)
         .bitrate(5_000_000);
 
-    assert_eq!(config.fps, 24);
+    assert_eq!(config.frames_per_second, 24);
     assert_eq!(config.width, Some(1920));
     assert_eq!(config.height, Some(1080));
     assert_eq!(config.codec, VideoCodec::H265);

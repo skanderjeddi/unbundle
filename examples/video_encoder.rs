@@ -39,7 +39,7 @@ fn main() -> Result<(), UnbundleError> {
     // Write to a new MP4 at 24 fps.
     let output = "output_written.mp4";
     let config = VideoEncoderOptions::default()
-        .fps(24)
+        .frames_per_second(24)
         .codec(VideoCodec::H264);
 
     VideoEncoder::new(config).write(output, &frames)?;

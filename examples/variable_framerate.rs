@@ -13,7 +13,7 @@ fn main() -> Result<(), UnbundleError> {
     let analysis = unbundler.video().analyze_variable_framerate()?;
 
     println!("VFR Analysis for: {path}");
-    println!("  Is VFR: {}", analysis.is_vfr);
+    println!("  Is VFR: {}", analysis.is_variable_frame_rate);
     println!(
         "  Mean frame duration: {:.4} ms",
         analysis.mean_frame_duration * 1000.0
@@ -24,12 +24,12 @@ fn main() -> Result<(), UnbundleError> {
     );
     println!(
         "  FPS range: {:.2} – {:.2}",
-        analysis.min_fps, analysis.max_fps
+        analysis.min_frames_per_second, analysis.max_frames_per_second
     );
-    println!("  Mean FPS: {:.2}", analysis.mean_fps);
+    println!("  Mean FPS: {:.2}", analysis.mean_frames_per_second);
     println!("  Frames analyzed: {}", analysis.frames_analyzed);
 
-    if analysis.is_vfr {
+    if analysis.is_variable_frame_rate {
         println!("\n  ⚠ This video has variable frame rate (VFR).");
     } else {
         println!("\n  ✓ This video has constant frame rate (CFR).");

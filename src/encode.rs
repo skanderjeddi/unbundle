@@ -23,8 +23,7 @@ use ffmpeg_next::format::{Flags as FormatFlags, Pixel};
 use ffmpeg_next::frame::Video as VideoFrame;
 use ffmpeg_next::software::scaling::{Context as ScalingContext, Flags as ScalingFlags};
 use ffmpeg_next::{Packet, Rational};
-use image::DynamicImage;
-use image::imageops::FilterType;
+use image::{DynamicImage, imageops::FilterType};
 
 use crate::error::UnbundleError;
 
@@ -34,7 +33,7 @@ use crate::error::UnbundleError;
 #[derive(Debug, Clone)]
 pub struct VideoEncoderOptions {
     /// Target frames per second (default: 30).
-    pub fps: u32,
+    pub frames_per_second: u32,
     /// Output width. If `None`, inferred from the first frame.
     pub width: Option<u32>,
     /// Output height. If `None`, inferred from the first frame.
@@ -50,7 +49,7 @@ pub struct VideoEncoderOptions {
 impl Default for VideoEncoderOptions {
     fn default() -> Self {
         Self {
-            fps: 30,
+            frames_per_second: 30,
             width: None,
             height: None,
             codec: VideoCodec::H264,
@@ -62,8 +61,8 @@ impl Default for VideoEncoderOptions {
 
 impl VideoEncoderOptions {
     /// Set the frame rate.
-    pub fn fps(mut self, fps: u32) -> Self {
-        self.fps = fps;
+    pub fn frames_per_second(mut self, frames_per_second: u32) -> Self {
+        self.frames_per_second = frames_per_second;
         self
     }
 
@@ -150,7 +149,7 @@ impl VideoEncoder {
             frames.len(),
             path.as_ref(),
             self.config.codec,
-            self.config.fps,
+            self.config.frames_per_second,
         );
         if frames.is_empty() {
             return Err(UnbundleError::VideoWriteError(
@@ -189,10 +188,11 @@ impl VideoEncoder {
 
         // Configure encoder context from the stream's codec parameters.
         let mut encoder = {
-            let ctx = CodecContext::from_parameters(stream.parameters()).map_err(|e| {
-                UnbundleError::VideoEncodeError(format!("cannot create codec context: {e}"))
-            })?;
-            ctx.encoder().video().map_err(|e| {
+            let codec_context =
+                CodecContext::from_parameters(stream.parameters()).map_err(|e| {
+                    UnbundleError::VideoEncodeError(format!("cannot create codec context: {e}"))
+                })?;
+            codec_context.encoder().video().map_err(|e| {
                 UnbundleError::VideoEncodeError(format!("cannot open video encoder: {e}"))
             })?
         };
@@ -200,8 +200,8 @@ impl VideoEncoder {
         encoder.set_width(width);
         encoder.set_height(height);
         encoder.set_format(target_pixel);
-        encoder.set_time_base(Rational::new(1, self.config.fps as i32));
-        encoder.set_frame_rate(Some(Rational::new(self.config.fps as i32, 1)));
+        encoder.set_time_base(Rational::new(1, self.config.frames_per_second as i32));
+        encoder.set_frame_rate(Some(Rational::new(self.config.frames_per_second as i32, 1)));
 
         if let Some(bitrate) = self.config.bitrate {
             encoder.set_bit_rate(bitrate);
@@ -241,40 +241,41 @@ impl VideoEncoder {
 
         let mut frame_index: i64 = 0;
 
-        for img in frames {
+        for frame_image in frames {
             // Resize if needed and convert to RGB8.
-            let rgb = if img.width() != width || img.height() != height {
-                img.resize_exact(width, height, FilterType::Lanczos3)
+            let rgb_image = if frame_image.width() != width || frame_image.height() != height {
+                frame_image
+                    .resize_exact(width, height, FilterType::Lanczos3)
                     .to_rgb8()
             } else {
-                img.to_rgb8()
+                frame_image.to_rgb8()
             };
 
             // Create source frame.
-            let mut src_frame = VideoFrame::new(Pixel::RGB24, width, height);
-            let stride = src_frame.stride(0);
-            let src_data = src_frame.data_mut(0);
-            let rgb_bytes = rgb.as_raw();
+            let mut source_frame = VideoFrame::new(Pixel::RGB24, width, height);
+            let stride = source_frame.stride(0);
+            let source_data = source_frame.data_mut(0);
+            let rgb_bytes = rgb_image.as_raw();
             for y in 0..height as usize {
-                let src_start = y * (width as usize) * 3;
-                let dst_start = y * stride;
+                let source_start = y * (width as usize) * 3;
+                let destination_start = y * stride;
                 let row_len = (width as usize) * 3;
-                src_data[dst_start..dst_start + row_len]
-                    .copy_from_slice(&rgb_bytes[src_start..src_start + row_len]);
+                source_data[destination_start..destination_start + row_len]
+                    .copy_from_slice(&rgb_bytes[source_start..source_start + row_len]);
             }
 
             // Scale to target pixel format.
-            let mut dst_frame = VideoFrame::empty();
+            let mut destination_frame = VideoFrame::empty();
             scaler
-                .run(&src_frame, &mut dst_frame)
+                .run(&source_frame, &mut destination_frame)
                 .map_err(|e| UnbundleError::VideoWriteError(format!("scaling failed: {e}")))?;
 
-            dst_frame.set_pts(Some(frame_index));
+            destination_frame.set_pts(Some(frame_index));
             frame_index += 1;
 
             // Send frame to encoder.
             opened_encoder
-                .send_frame(&dst_frame)
+                .send_frame(&destination_frame)
                 .map_err(|e| UnbundleError::VideoEncodeError(format!("send_frame failed: {e}")))?;
 
             // Receive and write encoded packets.
@@ -282,7 +283,7 @@ impl VideoEncoder {
             while opened_encoder.receive_packet(&mut packet).is_ok() {
                 packet.set_stream(stream_index);
                 packet.rescale_ts(
-                    Rational::new(1, self.config.fps as i32),
+                    Rational::new(1, self.config.frames_per_second as i32),
                     output.stream(stream_index).unwrap().time_base(),
                 );
                 packet.write_interleaved(&mut output).map_err(|e| {
@@ -300,7 +301,7 @@ impl VideoEncoder {
         while opened_encoder.receive_packet(&mut packet).is_ok() {
             packet.set_stream(stream_index);
             packet.rescale_ts(
-                Rational::new(1, self.config.fps as i32),
+                Rational::new(1, self.config.frames_per_second as i32),
                 output.stream(stream_index).unwrap().time_base(),
             );
             packet.write_interleaved(&mut output).map_err(|e| {

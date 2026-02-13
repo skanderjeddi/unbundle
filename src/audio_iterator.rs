@@ -20,15 +20,16 @@
 
 use std::time::Duration;
 
-use ffmpeg_next::codec::context::Context as CodecContext;
-use ffmpeg_next::decoder::Audio as AudioDecoder;
-use ffmpeg_next::format::{Sample, sample::Type as SampleType};
-use ffmpeg_next::frame::Audio as AudioFrame;
-use ffmpeg_next::software::resampling::Context as ResamplingContext;
-use ffmpeg_next::{ChannelLayout, Error as FfmpegError, Packet};
+use ffmpeg_next::{
+    ChannelLayout, Error as FfmpegError, Packet,
+    codec::context::Context as CodecContext,
+    decoder::Audio as AudioDecoder,
+    format::{Sample, sample::Type as SampleType},
+    frame::Audio as AudioFrame,
+    software::resampling::Context as ResamplingContext,
+};
 
-use crate::error::UnbundleError;
-use crate::unbundle::MediaFile;
+use crate::{error::UnbundleError, unbundle::MediaFile};
 
 /// A chunk of decoded audio samples.
 #[derive(Debug, Clone)]

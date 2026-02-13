@@ -23,8 +23,10 @@ use ffmpeg_next::{
 };
 use ffmpeg_sys_next::{AVFormatContext, AVRational};
 
-use crate::audio_iterator::AudioIterator;
-use crate::{configuration::ExtractOptions, error::UnbundleError, unbundle::MediaFile};
+use crate::{
+    audio_iterator::AudioIterator, configuration::ExtractOptions, error::UnbundleError,
+    unbundle::MediaFile,
+};
 
 #[cfg(feature = "loudness")]
 use crate::loudness::LoudnessInfo;
@@ -959,8 +961,8 @@ impl<'a> AudioHandle<'a> {
         writer: &mut W,
     ) -> Result<(), UnbundleError> {
         for (stream, packet) in self.unbundler.input_context.packets() {
-            if let Some(cfg) = config
-                && cfg.is_cancelled()
+            if let Some(active_config) = config
+                && active_config.is_cancelled()
             {
                 return Err(UnbundleError::Cancelled);
             }
@@ -1040,11 +1042,11 @@ impl<'a> AudioHandle<'a> {
         config: ExtractOptions,
     ) -> Result<AudioFuture, UnbundleError> {
         let _stream_index = self.resolve_stream_index()?;
-        let track_index = self.stream_index.and_then(|si| {
+        let track_index = self.stream_index.and_then(|stream_index| {
             self.unbundler
                 .audio_stream_indices
                 .iter()
-                .position(|&idx| idx == si)
+                .position(|&index| index == stream_index)
         });
         let file_path = self.unbundler.file_path.clone();
         Ok(crate::stream::create_audio_future(
@@ -1102,11 +1104,11 @@ impl<'a> AudioHandle<'a> {
                 end: format!("{end:?}"),
             });
         }
-        let track_index = self.stream_index.and_then(|si| {
+        let track_index = self.stream_index.and_then(|stream_index| {
             self.unbundler
                 .audio_stream_indices
                 .iter()
-                .position(|&idx| idx == si)
+                .position(|&index| index == stream_index)
         });
         let file_path = self.unbundler.file_path.clone();
         Ok(crate::stream::create_audio_future(

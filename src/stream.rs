@@ -116,20 +116,17 @@ pub(crate) fn create_frame_stream(
     channel_capacity: Option<usize>,
 ) -> FrameStream {
     let capacity = channel_capacity.unwrap_or(DEFAULT_CHANNEL_CAPACITY).max(1);
-    let (tx, rx) = tokio::sync::mpsc::channel(capacity);
+    let (sender, receiver) = tokio::sync::mpsc::channel(capacity);
 
     let handle = tokio::task::spawn_blocking(move || {
-        let result = decode_frames_blocking(&file_path, range, &config, &tx);
+        let result = decode_frames_blocking(&file_path, range, &config, &sender);
         if let Err(e) = result {
-            // Try to send the error; receiver may have been dropped.
-            let _ = tx.blocking_send(Err(e));
+            // Try to send the error; the receiver may have been dropped.
+            let _ = sender.blocking_send(Err(e));
         }
     });
 
-    FrameStream {
-        receiver: rx,
-        handle,
-    }
+    FrameStream { receiver, handle }
 }
 
 /// Background decode loop — runs on a blocking thread.
@@ -200,8 +197,8 @@ pub(crate) fn create_audio_future(
     let handle = tokio::task::spawn_blocking(move || {
         let mut unbundler = MediaFile::open(&file_path)?;
 
-        let mut extractor = if let Some(idx) = track_index {
-            unbundler.audio_track(idx)?
+        let mut extractor = if let Some(index) = track_index {
+            unbundler.audio_track(index)?
         } else {
             unbundler.audio()
         };
