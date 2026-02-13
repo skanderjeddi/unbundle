@@ -104,3 +104,20 @@ fn video_encoder_options_builder() {
     assert_eq!(config.crf, Some(18));
     assert_eq!(config.bitrate, Some(5_000_000));
 }
+
+#[test]
+fn video_encoder_options_with_aliases_builder() {
+    let config = VideoEncoderOptions::default()
+        .with_frames_per_second(24)
+        .with_resolution(1920, 1080)
+        .with_codec(VideoCodec::H265)
+        .with_crf(18)
+        .with_bitrate(5_000_000);
+
+    assert_eq!(config.frames_per_second, 24);
+    assert_eq!(config.width, Some(1920));
+    assert_eq!(config.height, Some(1080));
+    assert_eq!(config.codec, VideoCodec::H265);
+    assert_eq!(config.crf, Some(18));
+    assert_eq!(config.bitrate, Some(5_000_000));
+}
