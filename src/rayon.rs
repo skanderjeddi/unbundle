@@ -78,7 +78,7 @@ fn split_into_runs(frame_numbers: &[u64], gap_threshold: u64) -> Vec<Vec<u64>> {
             current_run.push(number);
         } else {
             runs.push(std::mem::take(&mut current_run));
-            current_run.push(num);
+            current_run.push(number);
         }
     }
 
