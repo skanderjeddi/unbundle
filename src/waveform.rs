@@ -61,16 +61,37 @@ impl WaveformOptions {
         self
     }
 
+    /// Set the number of output bins.
+    ///
+    /// Alias for [`bins`](WaveformOptions::bins).
+    pub fn with_bins(self, bins: usize) -> Self {
+        self.bins(bins)
+    }
+
     /// Set an optional start time.
     pub fn start(mut self, start: Duration) -> Self {
         self.start = Some(start);
         self
     }
 
+    /// Set an optional start time.
+    ///
+    /// Alias for [`start`](WaveformOptions::start).
+    pub fn with_start(self, start: Duration) -> Self {
+        self.start(start)
+    }
+
     /// Set an optional end time.
     pub fn end(mut self, end: Duration) -> Self {
         self.end = Some(end);
         self
+    }
+
+    /// Set an optional end time.
+    ///
+    /// Alias for [`end`](WaveformOptions::end).
+    pub fn with_end(self, end: Duration) -> Self {
+        self.end(end)
     }
 }
 

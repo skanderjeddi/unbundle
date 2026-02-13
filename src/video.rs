@@ -1639,9 +1639,9 @@ impl<'a> VideoHandle<'a> {
             .as_ref()
             .ok_or(UnbundleError::NoVideoStream)?;
 
-        let file_path = self.unbundler.file_path.clone();
+        let source = self.unbundler.source.clone();
         Ok(crate::stream::create_frame_stream(
-            file_path, range, config, None,
+            source, range, config, None,
         ))
     }
 
@@ -1868,7 +1868,7 @@ impl<'a> VideoHandle<'a> {
         let frame_numbers = self.resolve_frame_numbers_for_iter(range, &video_metadata)?;
 
         let results = crate::rayon::parallel_extract_frames(
-            &self.unbundler.file_path,
+            &self.unbundler.source,
             &frame_numbers,
             &video_metadata,
             config,

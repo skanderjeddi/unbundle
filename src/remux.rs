@@ -96,6 +96,14 @@ impl Remuxer {
         self
     }
 
+    /// Exclude video streams from the output.
+    ///
+    /// Alias for [`exclude_video`](Remuxer::exclude_video).
+    #[must_use]
+    pub fn with_exclude_video(self) -> Self {
+        self.exclude_video()
+    }
+
     /// Exclude audio streams from the output.
     #[must_use]
     pub fn exclude_audio(mut self) -> Self {
@@ -103,11 +111,27 @@ impl Remuxer {
         self
     }
 
+    /// Exclude audio streams from the output.
+    ///
+    /// Alias for [`exclude_audio`](Remuxer::exclude_audio).
+    #[must_use]
+    pub fn with_exclude_audio(self) -> Self {
+        self.exclude_audio()
+    }
+
     /// Exclude subtitle streams from the output.
     #[must_use]
     pub fn exclude_subtitles(mut self) -> Self {
         self.copy_subtitles = false;
         self
+    }
+
+    /// Exclude subtitle streams from the output.
+    ///
+    /// Alias for [`exclude_subtitles`](Remuxer::exclude_subtitles).
+    #[must_use]
+    pub fn with_exclude_subtitles(self) -> Self {
+        self.exclude_subtitles()
     }
 
     /// Execute the remuxing operation.

@@ -59,10 +59,24 @@ impl<'a> Transcoder<'a> {
         self
     }
 
+    /// Set the target audio format.
+    ///
+    /// Alias for [`format`](Transcoder::format).
+    pub fn with_format(self, format: AudioFormat) -> Self {
+        self.format(format)
+    }
+
     /// Set an optional start time for the transcoded range.
     pub fn start(mut self, start: Duration) -> Self {
         self.start = Some(start);
         self
+    }
+
+    /// Set an optional start time for the transcoded range.
+    ///
+    /// Alias for [`start`](Transcoder::start).
+    pub fn with_start(self, start: Duration) -> Self {
+        self.start(start)
     }
 
     /// Set an optional end time for the transcoded range.
@@ -71,11 +85,25 @@ impl<'a> Transcoder<'a> {
         self
     }
 
+    /// Set an optional end time for the transcoded range.
+    ///
+    /// Alias for [`end`](Transcoder::end).
+    pub fn with_end(self, end: Duration) -> Self {
+        self.end(end)
+    }
+
     /// Set the target bitrate in bits per second. If not set, the encoder
     /// default is used.
     pub fn bitrate(mut self, bitrate: usize) -> Self {
         self.bitrate = Some(bitrate);
         self
+    }
+
+    /// Set the target bitrate in bits per second.
+    ///
+    /// Alias for [`bitrate`](Transcoder::bitrate).
+    pub fn with_bitrate(self, bitrate: usize) -> Self {
+        self.bitrate(bitrate)
     }
 
     /// Run the transcode and write the output to `path`.

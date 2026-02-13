@@ -209,6 +209,25 @@ fn open_nonexistent_file_returns_error() {
 }
 
 #[test]
+fn open_url_accepts_path_input() {
+    let path = Path::new(sample_video_path());
+    if !path.exists() {
+        return;
+    }
+
+    let unbundler =
+        MediaFile::open_url(sample_video_path()).expect("Failed to open source via open_url");
+    let metadata = unbundler.metadata();
+
+    assert!(metadata.video.is_some(), "Expected video metadata");
+    assert!(metadata.audio.is_some(), "Expected audio metadata");
+    assert!(
+        metadata.duration.as_secs_f64() > 0.0,
+        "Expected non-zero duration"
+    );
+}
+
+#[test]
 fn mkv_format_works() {
     let path = "tests/fixtures/sample_video.mkv";
     if !Path::new(path).exists() {

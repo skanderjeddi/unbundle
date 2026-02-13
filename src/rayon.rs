@@ -8,8 +8,6 @@
 //! [`VideoHandle::frames_parallel`](crate::VideoHandle) — this module
 //! contains only the internal implementation.
 
-use std::path::{Path, PathBuf};
-
 use ::rayon::iter::{IntoParallelIterator, ParallelIterator};
 use image::DynamicImage;
 
@@ -26,12 +24,12 @@ use crate::video::FrameRange;
 ///
 /// # Arguments
 ///
-/// * `file_path` — Path to the media file.
+/// * `source` — Input source string (path/URL).
 /// * `frame_numbers` — Sorted, deduplicated frame numbers to extract.
 /// * `video_metadata` — Cached video metadata (used for validation only).
 /// * `config` — Extraction settings forwarded to each worker.
 pub(crate) fn parallel_extract_frames(
-    file_path: &PathBuf,
+    source: &str,
     frame_numbers: &[u64],
     _video_metadata: &VideoMetadata,
     config: &ExtractOptions,
@@ -45,7 +43,7 @@ pub(crate) fn parallel_extract_frames(
     // to decode sequentially than to seek to individually.
     let chunks = split_into_runs(frame_numbers, 30);
 
-    let path = file_path.clone();
+    let source = source.to_string();
     let config = config.clone();
 
     let results: Result<Vec<Vec<(u64, DynamicImage)>>, UnbundleError> = chunks
@@ -54,7 +52,7 @@ pub(crate) fn parallel_extract_frames(
             if config.is_cancelled() {
                 return Err(UnbundleError::Cancelled);
             }
-            decode_chunk(&path, &chunk, &config)
+            decode_chunk(&source, &chunk, &config)
         })
         .collect();
 
@@ -91,11 +89,11 @@ fn split_into_runs(frame_numbers: &[u64], gap_threshold: u64) -> Vec<Vec<u64>> {
 
 /// Decode a chunk of frame numbers from a fresh file context.
 fn decode_chunk(
-    file_path: &Path,
+    source: &str,
     frame_numbers: &[u64],
     config: &ExtractOptions,
 ) -> Result<Vec<(u64, DynamicImage)>, UnbundleError> {
-    let mut unbundler = MediaFile::open(file_path)?;
+    let mut unbundler = MediaFile::open_source(source)?;
     let mut frames = Vec::with_capacity(frame_numbers.len());
 
     // Use for_each_frame_with_options with Specific to leverage sequential

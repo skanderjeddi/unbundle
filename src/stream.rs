@@ -32,7 +32,6 @@
 //! ```
 
 use std::future::Future;
-use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -100,17 +99,17 @@ impl Stream for FrameStream {
 
 /// Create a [`FrameStream`] that decodes video frames on a blocking thread.
 ///
-/// Opens a fresh demuxer for `file_path`, decodes frames matching `range`,
+/// Opens a fresh demuxer for `source`, decodes frames matching `range`,
 /// and sends each `(frame_number, DynamicImage)` through a bounded channel.
 ///
 /// # Arguments
 ///
-/// * `file_path` — Path to the media file (cloned from the original unbundler).
+/// * `source` — Input source string (path/URL) cloned from the original unbundler.
 /// * `range` — Which frames to decode.
 /// * `config` — Extraction settings (progress, cancellation, output format).
 /// * `channel_capacity` — Bounded channel size. `None` uses the default (8).
 pub(crate) fn create_frame_stream(
-    file_path: PathBuf,
+    source: String,
     range: FrameRange,
     config: ExtractOptions,
     channel_capacity: Option<usize>,
@@ -119,7 +118,7 @@ pub(crate) fn create_frame_stream(
     let (sender, receiver) = tokio::sync::mpsc::channel(capacity);
 
     let handle = tokio::task::spawn_blocking(move || {
-        let result = decode_frames_blocking(&file_path, range, &config, &sender);
+        let result = decode_frames_blocking(&source, range, &config, &sender);
         if let Err(e) = result {
             // Try to send the error; the receiver may have been dropped.
             let _ = sender.blocking_send(Err(e));
@@ -131,12 +130,12 @@ pub(crate) fn create_frame_stream(
 
 /// Background decode loop — runs on a blocking thread.
 fn decode_frames_blocking(
-    file_path: &Path,
+    source: &str,
     range: FrameRange,
     config: &ExtractOptions,
     sender: &Sender<Result<(u64, DynamicImage), UnbundleError>>,
 ) -> Result<(), UnbundleError> {
-    let mut unbundler = MediaFile::open(file_path)?;
+    let mut unbundler = MediaFile::open_source(source)?;
 
     unbundler
         .video()
@@ -185,17 +184,17 @@ impl Future for AudioFuture {
 
 /// Create an [`AudioFuture`] that transcodes audio on a blocking thread.
 ///
-/// Opens a fresh demuxer for `file_path` and extracts the specified audio
+/// Opens a fresh demuxer for `source` and extracts the specified audio
 /// track in the given format.
 pub(crate) fn create_audio_future(
-    file_path: PathBuf,
+    source: String,
     format: AudioFormat,
     track_index: Option<usize>,
     range: Option<(Duration, Duration)>,
     config: ExtractOptions,
 ) -> AudioFuture {
     let handle = tokio::task::spawn_blocking(move || {
-        let mut unbundler = MediaFile::open(&file_path)?;
+        let mut unbundler = MediaFile::open_source(&source)?;
 
         let mut extractor = if let Some(index) = track_index {
             unbundler.audio_track(index)?

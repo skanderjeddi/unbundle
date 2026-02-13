@@ -63,3 +63,15 @@ fn gif_config_builder() {
     assert_eq!(config.frame_delay, 50);
     assert!(config.repeat.is_none());
 }
+
+#[test]
+fn gif_config_with_aliases_builder() {
+    let config = GifOptions::new()
+        .with_width(240)
+        .with_frame_delay(12)
+        .with_repeat(Some(2));
+
+    assert_eq!(config.width, Some(240));
+    assert_eq!(config.frame_delay, 12);
+    assert_eq!(config.repeat, Some(2));
+}

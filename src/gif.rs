@@ -68,6 +68,13 @@ impl GifOptions {
         self
     }
 
+    /// Set the target width (height is auto-scaled to preserve aspect ratio).
+    ///
+    /// Alias for [`width`](GifOptions::width).
+    pub fn with_width(self, width: u32) -> Self {
+        self.width(width)
+    }
+
     /// Set the delay between frames in hundredths of a second.
     ///
     /// For example, `10` = 100 ms between frames ≈ 10 fps.
@@ -76,10 +83,24 @@ impl GifOptions {
         self
     }
 
+    /// Set the delay between frames in hundredths of a second.
+    ///
+    /// Alias for [`frame_delay`](GifOptions::frame_delay).
+    pub fn with_frame_delay(self, delay: u16) -> Self {
+        self.frame_delay(delay)
+    }
+
     /// Set the repeat count. `None` means loop forever.
     pub fn repeat(mut self, repeat: Option<u16>) -> Self {
         self.repeat = repeat;
         self
+    }
+
+    /// Set the repeat count. `None` means loop forever.
+    ///
+    /// Alias for [`repeat`](GifOptions::repeat).
+    pub fn with_repeat(self, repeat: Option<u16>) -> Self {
+        self.repeat(repeat)
     }
 
     /// Build a [`FrameOutputOptions`] matching this GIF configuration.

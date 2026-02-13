@@ -112,3 +112,22 @@ fn remux_nonexistent_input_error() {
     let result = Remuxer::new("this_does_not_exist.mp4", "output.mp4");
     assert!(result.is_err(), "Expected error for nonexistent input");
 }
+
+#[test]
+fn remux_with_aliases_compile_and_run() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let tmp = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    let output_path = tmp.path().with_extension("mkv");
+
+    Remuxer::new(path, &output_path)
+        .expect("Failed to create remuxer")
+        .with_exclude_subtitles()
+        .run()
+        .expect("Failed to remux with alias method");
+
+    let _ = std::fs::remove_file(&output_path);
+}

@@ -65,7 +65,11 @@ pub struct MediaFile {
     pub(crate) subtitle_stream_index: Option<usize>,
     /// Indices of all subtitle streams, ordered by track number.
     pub(crate) subtitle_stream_indices: Vec<usize>,
-    /// Path to the opened media file (kept for error messages).
+    /// Original input source used to open this media (path, URL, or stream-like input).
+    #[allow(dead_code)]
+    pub(crate) source: String,
+    /// Best-effort path representation of [`source`](MediaFile::source), kept for
+    /// error payload compatibility.
     #[allow(dead_code)]
     pub(crate) file_path: PathBuf,
 }
@@ -80,46 +84,32 @@ impl Debug for MediaFile {
             .field("audio_stream_indices", &self.audio_stream_indices)
             .field("subtitle_stream_index", &self.subtitle_stream_index)
             .field("subtitle_stream_indices", &self.subtitle_stream_indices)
+            .field("source", &self.source)
             .field("file_path", &self.file_path)
             .finish_non_exhaustive()
     }
 }
 
 impl MediaFile {
-    /// Open a media file for extraction.
+    /// Open a media input source for extraction.
     ///
-    /// Initializes FFmpeg (idempotent), opens the file, locates best video and
-    /// audio streams, and caches their metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`UnbundleError::FileOpen`] if the file cannot be opened or has
-    /// no recognisable media streams.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use unbundle::{MediaFile, UnbundleError};
-    ///
-    /// let unbundler = MediaFile::open("video.mp4")?;
-    /// # Ok::<(), UnbundleError>(())
-    /// ```
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, UnbundleError> {
-        let path = path.as_ref();
-        let canonical_path = path.to_path_buf();
+    /// `source` may be a local path, URL, or any input string accepted by FFmpeg.
+    pub(crate) fn open_source(source: &str) -> Result<Self, UnbundleError> {
+        let source_string = source.to_string();
+        let source_path = PathBuf::from(source);
 
-        log::debug!("Opening media file: {}", canonical_path.display());
+        log::debug!("Opening media source: {source}");
 
         // Initialise ffmpeg (safe to call multiple times).
         ffmpeg_next::init().map_err(|error| UnbundleError::FileOpen {
-            path: canonical_path.clone(),
+            path: source_path.clone(),
             reason: format!("FFmpeg initialisation failed: {error}"),
         })?;
 
-        // Open the media file.
+        // Open the media source.
         let input_context =
-            ffmpeg_next::format::input(&path).map_err(|error| UnbundleError::FileOpen {
-                path: canonical_path.clone(),
+            ffmpeg_next::format::input(source).map_err(|error| UnbundleError::FileOpen {
+                path: source_path.clone(),
                 reason: error.to_string(),
             })?;
 
@@ -463,7 +453,7 @@ impl MediaFile {
 
         log::info!(
             "Opened media file: {} (format={}, duration={:.2}s, video_streams={}, audio_streams={}, subtitle_streams={})",
-            canonical_path.display(),
+            source,
             metadata.format,
             metadata.duration.as_secs_f64(),
             video_stream_indices.len(),
@@ -502,8 +492,54 @@ impl MediaFile {
             audio_stream_indices,
             subtitle_stream_index,
             subtitle_stream_indices,
-            file_path: canonical_path,
+            source: source_string,
+            file_path: source_path,
         })
+    }
+
+    /// Open a media file for extraction.
+    ///
+    /// Initializes FFmpeg (idempotent), opens the file, locates best video and
+    /// audio streams, and caches their metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::FileOpen`] if the file cannot be opened or has
+    /// no recognisable media streams.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaFile, UnbundleError};
+    ///
+    /// let unbundler = MediaFile::open("video.mp4")?;
+    /// # Ok::<(), UnbundleError>(())
+    /// ```
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, UnbundleError> {
+        let source = path.as_ref().to_string_lossy().to_string();
+        Self::open_source(&source)
+    }
+
+    /// Open a media URL for extraction.
+    ///
+    /// Accepts any protocol supported by your FFmpeg build, such as
+    /// `http://`, `https://`, `rtsp://`, and `file://` URLs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::FileOpen`] when FFmpeg cannot open the URL.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaFile, UnbundleError};
+    ///
+    /// let mut unbundler = MediaFile::open_url("file:///tmp/input.mp4")?;
+    /// let metadata = unbundler.metadata();
+    /// # Ok::<(), UnbundleError>(())
+    /// ```
+    pub fn open_url(url: &str) -> Result<Self, UnbundleError> {
+        Self::open_source(url)
     }
 
     /// Get a reference to the cached media metadata.

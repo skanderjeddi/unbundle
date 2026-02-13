@@ -112,10 +112,24 @@ impl SceneDetectionOptions {
         self
     }
 
+    /// Set the minimum score required for scene changes.
+    ///
+    /// Alias for [`threshold`](SceneDetectionOptions::threshold).
+    pub fn with_threshold(self, threshold: f64) -> Self {
+        self.threshold(threshold)
+    }
+
     /// Set the scene detection strategy.
     pub fn mode(mut self, mode: SceneDetectionMode) -> Self {
         self.mode = mode;
         self
+    }
+
+    /// Set the scene detection strategy.
+    ///
+    /// Alias for [`mode`](SceneDetectionOptions::mode).
+    pub fn with_mode(self, mode: SceneDetectionMode) -> Self {
+        self.mode(mode)
     }
 
     /// Limit analysis to the first `duration` of the video.
@@ -124,10 +138,24 @@ impl SceneDetectionOptions {
         self
     }
 
+    /// Limit analysis to the first `duration` of the video.
+    ///
+    /// Alias for [`max_duration`](SceneDetectionOptions::max_duration).
+    pub fn with_max_duration(self, duration: Duration) -> Self {
+        self.max_duration(duration)
+    }
+
     /// Stop after detecting at most `max_changes` scene changes.
     pub fn max_scene_changes(mut self, max_changes: usize) -> Self {
         self.max_scene_changes = Some(max_changes);
         self
+    }
+
+    /// Stop after detecting at most `max_changes` scene changes.
+    ///
+    /// Alias for [`max_scene_changes`](SceneDetectionOptions::max_scene_changes).
+    pub fn with_max_scene_changes(self, max_changes: usize) -> Self {
+        self.max_scene_changes(max_changes)
     }
 }
 

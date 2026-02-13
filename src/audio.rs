@@ -1536,9 +1536,9 @@ impl<'a> AudioHandle<'a> {
                 .iter()
                 .position(|&index| index == stream_index)
         });
-        let file_path = self.unbundler.file_path.clone();
+        let source = self.unbundler.source.clone();
         Ok(crate::stream::create_audio_future(
-            file_path,
+            source,
             format,
             track_index,
             None,
@@ -1598,9 +1598,9 @@ impl<'a> AudioHandle<'a> {
                 .iter()
                 .position(|&index| index == stream_index)
         });
-        let file_path = self.unbundler.file_path.clone();
+        let source = self.unbundler.source.clone();
         Ok(crate::stream::create_audio_future(
-            file_path,
+            source,
             format,
             track_index,
             Some((start, end)),

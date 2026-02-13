@@ -66,11 +66,25 @@ impl VideoEncoderOptions {
         self
     }
 
+    /// Set the frame rate.
+    ///
+    /// Alias for [`frames_per_second`](VideoEncoderOptions::frames_per_second).
+    pub fn with_frames_per_second(self, frames_per_second: u32) -> Self {
+        self.frames_per_second(frames_per_second)
+    }
+
     /// Set the output resolution.
     pub fn resolution(mut self, width: u32, height: u32) -> Self {
         self.width = Some(width);
         self.height = Some(height);
         self
+    }
+
+    /// Set the output resolution.
+    ///
+    /// Alias for [`resolution`](VideoEncoderOptions::resolution).
+    pub fn with_resolution(self, width: u32, height: u32) -> Self {
+        self.resolution(width, height)
     }
 
     /// Set the codec.
@@ -79,16 +93,37 @@ impl VideoEncoderOptions {
         self
     }
 
+    /// Set the codec.
+    ///
+    /// Alias for [`codec`](VideoEncoderOptions::codec).
+    pub fn with_codec(self, codec: VideoCodec) -> Self {
+        self.codec(codec)
+    }
+
     /// Set the CRF quality value.
     pub fn crf(mut self, crf: u32) -> Self {
         self.crf = Some(crf);
         self
     }
 
+    /// Set the CRF quality value.
+    ///
+    /// Alias for [`crf`](VideoEncoderOptions::crf).
+    pub fn with_crf(self, crf: u32) -> Self {
+        self.crf(crf)
+    }
+
     /// Set the target bitrate in bits per second.
     pub fn bitrate(mut self, bitrate: usize) -> Self {
         self.bitrate = Some(bitrate);
         self
+    }
+
+    /// Set the target bitrate in bits per second.
+    ///
+    /// Alias for [`bitrate`](VideoEncoderOptions::bitrate).
+    pub fn with_bitrate(self, bitrate: usize) -> Self {
+        self.bitrate(bitrate)
     }
 }
 

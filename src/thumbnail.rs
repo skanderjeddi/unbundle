@@ -61,6 +61,13 @@ impl ThumbnailOptions {
         self.thumbnail_width = width;
         self
     }
+
+    /// Set the target width for each thumbnail.
+    ///
+    /// Alias for [`with_thumbnail_width`](ThumbnailOptions::with_thumbnail_width).
+    pub fn thumbnail_width(self, width: u32) -> Self {
+        self.with_thumbnail_width(width)
+    }
 }
 
 /// Thumbnail generation utilities.
