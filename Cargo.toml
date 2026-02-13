@@ -1,6 +1,6 @@
 [package]
 name = "unbundle"
-version = "4.3.6"
+version = "4.3.7"
 edition = "2024"
 authors = ["Skander Jeddi <skanderjeddi@fastmail.com>"]
 description = "Unbundle media files - extract still frames, audio tracks, and subtitles from video files"
@@ -92,3 +92,7 @@ required-features = ["encode"]
 [[bench]]
 name = "extraction_benchmarks"
 harness = false
+
+[[bin]]
+name = "unbundle-cli"
+path = "src/bin/unbundle-cli.rs"

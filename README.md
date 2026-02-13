@@ -42,14 +42,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "4.3.6"
+unbundle = "4.3.7"
 ```
 
 Or with additional features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.3.6", features = ["async", "rayon", "hardware"] }
+unbundle = { version = "4.3.7", features = ["async", "rayon", "hardware"] }
 ```
 
 ### System Requirements
@@ -88,6 +88,9 @@ setx FFMPEG_DIR "C:\vcpkg\installed\x64-windows"
 ```
 
 Then restart your terminal and run `cargo build`.
+
+The crate includes a Windows build helper (`build.rs`) that emits guidance when
+`FFMPEG_DIR` is missing and a vcpkg install is detected.
 
 ## Quick Start
 
@@ -353,7 +356,7 @@ Enable additional functionality through Cargo features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.3.6", features = ["full"] }
+unbundle = { version = "4.3.7", features = ["full"] }
 ```
 
 #### Feature Usage Guide
@@ -405,6 +408,24 @@ Run an example:
 ```bash
 cargo run --example metadata -- path/to/video.mp4
 ```
+
+## CLI (MVP)
+
+This crate now ships a minimal CLI binary:
+
+```bash
+cargo run --bin unbundle-cli -- metadata input.mp4
+cargo run --bin unbundle-cli -- frame input.mp4 0 first.png
+cargo run --bin unbundle-cli -- frame-at input.mp4 2.5 at_2_5s.png
+cargo run --bin unbundle-cli -- audio input.mp4 wav output.wav
+cargo run --bin unbundle-cli -- subtitle input.mkv srt output.srt
+```
+
+The CLI is intentionally small and focused on common operations.
+
+## Changelog
+
+Release notes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## Advanced Usage
 
