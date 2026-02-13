@@ -94,3 +94,23 @@ fn transcode_with_range() {
         full.len()
     );
 }
+
+#[test]
+fn transcode_with_aliases() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open(path).expect("open");
+    let bytes = Transcoder::new(&mut unbundler)
+        .with_format(AudioFormat::Wav)
+        .with_start(Duration::from_secs(1))
+        .with_end(Duration::from_secs(2))
+        .with_bitrate(128_000)
+        .run_to_memory()
+        .expect("transcode aliases");
+
+    assert!(!bytes.is_empty());
+    assert_eq!(&bytes[..4], b"RIFF", "expected WAV RIFF header");
+}

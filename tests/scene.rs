@@ -223,6 +223,20 @@ fn detect_scenes_keyframe_mode_runs() {
 }
 
 #[test]
+fn scene_config_with_aliases_builds() {
+    let config = SceneDetectionOptions::new()
+        .with_threshold(5.0)
+        .with_mode(SceneDetectionMode::Full)
+        .with_max_duration(std::time::Duration::from_secs(2))
+        .with_max_scene_changes(3);
+
+    assert!((config.threshold - 5.0).abs() < f64::EPSILON);
+    assert_eq!(config.mode, SceneDetectionMode::Full);
+    assert_eq!(config.max_duration, Some(std::time::Duration::from_secs(2)));
+    assert_eq!(config.max_scene_changes, Some(3));
+}
+
+#[test]
 fn scene_change_debug_and_clone() {
     use unbundle::SceneChange;
 

@@ -153,6 +153,14 @@ fn smart_thumbnail_fits_max_dimension() {
 }
 
 #[test]
+fn thumbnail_options_alias_builder() {
+    let config = ThumbnailOptions::new(4, 3).thumbnail_width(200);
+    assert_eq!(config.columns, 4);
+    assert_eq!(config.rows, 3);
+    assert_eq!(config.thumbnail_width, 200);
+}
+
+#[test]
 fn thumbnail_config_builder() {
     let config = ThumbnailOptions::new(4, 3).with_thumbnail_width(200);
     assert_eq!(config.columns, 4);
