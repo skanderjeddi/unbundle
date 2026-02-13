@@ -84,3 +84,15 @@ fn waveform_bins_in_range() {
         assert!(bin.min <= bin.max, "min should be <= max");
     }
 }
+
+#[test]
+fn waveform_with_aliases_builds() {
+    let config = WaveformOptions::new()
+        .with_bins(128)
+        .with_start(std::time::Duration::from_secs(1))
+        .with_end(std::time::Duration::from_secs(3));
+
+    assert_eq!(config.bins, 128);
+    assert_eq!(config.start, Some(std::time::Duration::from_secs(1)));
+    assert_eq!(config.end, Some(std::time::Duration::from_secs(3)));
+}
