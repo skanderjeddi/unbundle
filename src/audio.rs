@@ -427,6 +427,168 @@ impl<'a> AudioHandle<'a> {
         AudioIterator::new(self.unbundler, audio_stream_index)
     }
 
+    // ── Stream copy (lossless) ─────────────────────────────────────────
+
+    /// Copy the audio stream verbatim to a file without re-encoding.
+    ///
+    /// Unlike [`save`](AudioHandle::save) which decodes and re-encodes,
+    /// this copies packets directly from the input, preserving the
+    /// original codec and quality. The output container format is
+    /// inferred from the file extension.
+    ///
+    /// This is equivalent to `ffmpeg -i input.mp4 -vn -sn -c:a copy output.aac`.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::NoAudioStream`] if no audio stream exists.
+    /// - [`UnbundleError::StreamCopyError`] if the output container does
+    ///   not support the source codec.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaFile, UnbundleError};
+    ///
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// unbundler.audio().stream_copy("output.aac")?;
+    /// # Ok::<(), UnbundleError>(())
+    /// ```
+    pub fn stream_copy<P: AsRef<Path>>(&mut self, path: P) -> Result<(), UnbundleError> {
+        self.copy_stream_to_file(path.as_ref(), None, None, None)
+    }
+
+    /// Copy an audio segment verbatim to a file without re-encoding.
+    ///
+    /// Like [`stream_copy`](AudioHandle::stream_copy) but copies only
+    /// packets between `start` and `end`. Because there is no re-encoding,
+    /// the actual boundaries are aligned to the nearest packet — they may
+    /// not match the requested timestamps exactly.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::InvalidRange`] if `start >= end`.
+    /// - Plus any errors from [`stream_copy`](AudioHandle::stream_copy).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    ///
+    /// use unbundle::{MediaFile, UnbundleError};
+    ///
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// unbundler.audio().stream_copy_range(
+    ///     "segment.aac",
+    ///     Duration::from_secs(10),
+    ///     Duration::from_secs(20),
+    /// )?;
+    /// # Ok::<(), UnbundleError>(())
+    /// ```
+    pub fn stream_copy_range<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        start: Duration,
+        end: Duration,
+    ) -> Result<(), UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        self.copy_stream_to_file(path.as_ref(), Some(start), Some(end), None)
+    }
+
+    /// Copy the audio stream verbatim to a file with cancellation support.
+    ///
+    /// Like [`stream_copy`](AudioHandle::stream_copy) but accepts an
+    /// [`ExtractOptions`] for cancellation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::Cancelled`] if cancellation is requested,
+    /// or any error from [`stream_copy`](AudioHandle::stream_copy).
+    pub fn stream_copy_with_options<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        config: &ExtractOptions,
+    ) -> Result<(), UnbundleError> {
+        self.copy_stream_to_file(path.as_ref(), None, None, Some(config))
+    }
+
+    /// Copy an audio segment verbatim to a file with cancellation support.
+    ///
+    /// Like [`stream_copy_range`](AudioHandle::stream_copy_range) but
+    /// accepts an [`ExtractOptions`].
+    pub fn stream_copy_range_with_options<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        start: Duration,
+        end: Duration,
+        config: &ExtractOptions,
+    ) -> Result<(), UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        self.copy_stream_to_file(path.as_ref(), Some(start), Some(end), Some(config))
+    }
+
+    /// Copy the audio stream verbatim to memory without re-encoding.
+    ///
+    /// `container_format` is the FFmpeg short name for the output container
+    /// (e.g. `"adts"` for raw AAC, `"mp3"` for MP3, `"matroska"` for MKA,
+    /// `"ogg"` for Ogg).
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::NoAudioStream`] if no audio stream exists.
+    /// - [`UnbundleError::StreamCopyError`] if the container format is
+    ///   invalid or does not support the source codec.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaFile, UnbundleError};
+    ///
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let bytes = unbundler.audio().stream_copy_to_memory("adts")?;
+    /// println!("Copied {} bytes", bytes.len());
+    /// # Ok::<(), UnbundleError>(())
+    /// ```
+    pub fn stream_copy_to_memory(
+        &mut self,
+        container_format: &str,
+    ) -> Result<Vec<u8>, UnbundleError> {
+        self.copy_stream_to_memory(container_format, None, None, None)
+    }
+
+    /// Copy an audio segment verbatim to memory without re-encoding.
+    ///
+    /// Like [`stream_copy_to_memory`](AudioHandle::stream_copy_to_memory) but
+    /// copies only packets between `start` and `end`.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::InvalidRange`] if `start >= end`.
+    /// - Plus any errors from [`stream_copy_to_memory`](AudioHandle::stream_copy_to_memory).
+    pub fn stream_copy_range_to_memory(
+        &mut self,
+        container_format: &str,
+        start: Duration,
+        end: Duration,
+    ) -> Result<Vec<u8>, UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        self.copy_stream_to_memory(container_format, Some(start), Some(end), None)
+    }
+
     // ── Private helpers ────────────────────────────────────────────────
 
     /// Extract audio to an in-memory buffer using FFmpeg's dynamic buffer I/O.
@@ -1003,6 +1165,295 @@ impl<'a> AudioHandle<'a> {
         }
 
         Ok(())
+    }
+
+    // ── Stream copy (lossless) helpers ──────────────────────────────
+
+    /// Copy the audio stream verbatim to a file without decoding or
+    /// re-encoding. Container format is inferred from the file extension.
+    fn copy_stream_to_file(
+        &mut self,
+        path: &Path,
+        start: Option<Duration>,
+        end: Option<Duration>,
+        config: Option<&ExtractOptions>,
+    ) -> Result<(), UnbundleError> {
+        let audio_stream_index = self.resolve_stream_index()?;
+        log::debug!(
+            "Stream-copying audio to file {:?} (stream={})",
+            path,
+            audio_stream_index
+        );
+
+        let stream = self
+            .unbundler
+            .input_context
+            .stream(audio_stream_index)
+            .ok_or(UnbundleError::NoAudioStream)?;
+        let input_time_base = stream.time_base();
+
+        // Create output context — container format inferred from extension.
+        let mut output_context = ffmpeg_next::format::output(&path).map_err(|error| {
+            UnbundleError::StreamCopyError(format!("Failed to create output: {error}"))
+        })?;
+
+        // Add an output stream with the same codec parameters (stream copy).
+        {
+            let mut out_stream = output_context
+                .add_stream(ffmpeg_next::encoder::find(Id::None))
+                .map_err(|error| {
+                    UnbundleError::StreamCopyError(format!("Failed to add stream: {error}"))
+                })?;
+            out_stream.set_parameters(stream.parameters());
+            // Let the muxer choose the correct codec tag.
+            unsafe {
+                (*out_stream.parameters().as_mut_ptr()).codec_tag = 0;
+            }
+        }
+
+        output_context.write_header().map_err(|error| {
+            UnbundleError::StreamCopyError(format!("Failed to write header: {error}"))
+        })?;
+
+        // Seek to start position if specified.
+        if let Some(start_time) = start {
+            let seek_timestamp = crate::conversion::duration_to_seek_timestamp(start_time);
+            self.unbundler
+                .input_context
+                .seek(seek_timestamp, ..seek_timestamp)?;
+        }
+
+        let end_stream_timestamp = end.map(|end_time| {
+            crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
+        });
+
+        let output_time_base = output_context.stream(0).unwrap().time_base();
+
+        // Copy packets.
+        for (stream, mut packet) in self.unbundler.input_context.packets() {
+            if let Some(active_config) = config
+                && active_config.is_cancelled()
+            {
+                return Err(UnbundleError::Cancelled);
+            }
+            if stream.index() != audio_stream_index {
+                continue;
+            }
+
+            if let Some(end_ts) = end_stream_timestamp
+                && let Some(pts) = packet.pts()
+                && pts > end_ts
+            {
+                break;
+            }
+
+            packet.set_stream(0);
+            packet.rescale_ts(input_time_base, output_time_base);
+            packet.set_position(-1);
+            packet
+                .write_interleaved(&mut output_context)
+                .map_err(|error| {
+                    UnbundleError::StreamCopyError(format!("Failed to write packet: {error}"))
+                })?;
+        }
+
+        output_context.write_trailer().map_err(|error| {
+            UnbundleError::StreamCopyError(format!("Failed to write trailer: {error}"))
+        })?;
+
+        Ok(())
+    }
+
+    /// Copy the audio stream verbatim to an in-memory buffer using
+    /// FFmpeg's dynamic buffer I/O. No decoding or re-encoding.
+    fn copy_stream_to_memory(
+        &mut self,
+        container_format: &str,
+        start: Option<Duration>,
+        end: Option<Duration>,
+        config: Option<&ExtractOptions>,
+    ) -> Result<Vec<u8>, UnbundleError> {
+        let audio_stream_index = self.resolve_stream_index()?;
+        log::debug!(
+            "Stream-copying audio to memory (format={}, stream={})",
+            container_format,
+            audio_stream_index
+        );
+
+        let stream = self
+            .unbundler
+            .input_context
+            .stream(audio_stream_index)
+            .ok_or(UnbundleError::NoAudioStream)?;
+        let input_time_base = stream.time_base();
+        let codec_parameters = stream.parameters();
+
+        // Seek to start position if specified.
+        if let Some(start_time) = start {
+            let seek_timestamp = crate::conversion::duration_to_seek_timestamp(start_time);
+            self.unbundler
+                .input_context
+                .seek(seek_timestamp, ..seek_timestamp)?;
+        }
+
+        let end_stream_timestamp = end.map(|end_time| {
+            crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
+        });
+
+        // ── In-memory muxing via avio_open_dyn_buf ─────────────────
+        //
+        // SAFETY: Same pattern as `extract_audio_to_memory`. We allocate a
+        // muxer context backed by a dynamically-growing memory buffer, copy
+        // packets verbatim (no decode/encode), then extract the buffer.
+
+        unsafe {
+            let container_name_c = CString::new(container_format).map_err(|error| {
+                UnbundleError::StreamCopyError(format!("Invalid container format name: {error}"))
+            })?;
+
+            let mut output_format_context: *mut AVFormatContext = std::ptr::null_mut();
+            let allocation_result = ffmpeg_sys_next::avformat_alloc_output_context2(
+                &mut output_format_context,
+                std::ptr::null_mut(),
+                container_name_c.as_ptr(),
+                std::ptr::null(),
+            );
+            if allocation_result < 0 || output_format_context.is_null() {
+                return Err(UnbundleError::StreamCopyError(
+                    "Failed to allocate output format context".to_string(),
+                ));
+            }
+
+            // Open dynamic buffer for I/O.
+            let dynamic_buffer_result =
+                ffmpeg_sys_next::avio_open_dyn_buf(&mut (*output_format_context).pb);
+            if dynamic_buffer_result < 0 {
+                ffmpeg_sys_next::avformat_free_context(output_format_context);
+                return Err(UnbundleError::StreamCopyError(
+                    "Failed to open dynamic buffer".to_string(),
+                ));
+            }
+
+            // Add an output stream.
+            let output_stream =
+                ffmpeg_sys_next::avformat_new_stream(output_format_context, std::ptr::null());
+            if output_stream.is_null() {
+                let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
+                ffmpeg_sys_next::avio_close_dyn_buf(
+                    (*output_format_context).pb,
+                    &mut buffer_pointer,
+                );
+                if !buffer_pointer.is_null() {
+                    ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
+                }
+                (*output_format_context).pb = std::ptr::null_mut();
+                ffmpeg_sys_next::avformat_free_context(output_format_context);
+                return Err(UnbundleError::StreamCopyError(
+                    "Failed to add output stream".to_string(),
+                ));
+            }
+
+            // Copy codec parameters from input stream (no re-encode).
+            ffmpeg_sys_next::avcodec_parameters_copy(
+                (*output_stream).codecpar,
+                codec_parameters.as_ptr(),
+            );
+            (*(*output_stream).codecpar).codec_tag = 0;
+
+            (*output_stream).time_base = AVRational {
+                num: input_time_base.numerator(),
+                den: input_time_base.denominator(),
+            };
+
+            // Write the container header.
+            let write_header_result =
+                ffmpeg_sys_next::avformat_write_header(output_format_context, std::ptr::null_mut());
+            if write_header_result < 0 {
+                let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
+                ffmpeg_sys_next::avio_close_dyn_buf(
+                    (*output_format_context).pb,
+                    &mut buffer_pointer,
+                );
+                if !buffer_pointer.is_null() {
+                    ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
+                }
+                (*output_format_context).pb = std::ptr::null_mut();
+                ffmpeg_sys_next::avformat_free_context(output_format_context);
+                return Err(UnbundleError::StreamCopyError(
+                    "Failed to write output header".to_string(),
+                ));
+            }
+
+            // Retrieve output time base (may differ after header is written).
+            let output_time_base = Rational::new(
+                (*output_stream).time_base.num,
+                (*output_stream).time_base.den,
+            );
+
+            // Copy packets.
+            for (stream, mut packet) in self.unbundler.input_context.packets() {
+                if let Some(active_config) = config
+                    && active_config.is_cancelled()
+                {
+                    let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
+                    ffmpeg_sys_next::avio_close_dyn_buf(
+                        (*output_format_context).pb,
+                        &mut buffer_pointer,
+                    );
+                    if !buffer_pointer.is_null() {
+                        ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
+                    }
+                    (*output_format_context).pb = std::ptr::null_mut();
+                    ffmpeg_sys_next::avformat_free_context(output_format_context);
+                    return Err(UnbundleError::Cancelled);
+                }
+
+                if stream.index() != audio_stream_index {
+                    continue;
+                }
+
+                if let Some(end_ts) = end_stream_timestamp
+                    && let Some(pts) = packet.pts()
+                    && pts > end_ts
+                {
+                    break;
+                }
+
+                packet.set_stream(0);
+                packet.rescale_ts(input_time_base, output_time_base);
+                packet.set_position(-1);
+                ffmpeg_sys_next::av_interleaved_write_frame(
+                    output_format_context,
+                    packet.as_mut_ptr(),
+                );
+            }
+
+            // Write the container trailer.
+            ffmpeg_sys_next::av_write_trailer(output_format_context);
+
+            // Extract the dynamic buffer contents.
+            let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
+            let buffer_size = ffmpeg_sys_next::avio_close_dyn_buf(
+                (*output_format_context).pb,
+                &mut buffer_pointer,
+            );
+
+            let result_bytes = if buffer_size > 0 && !buffer_pointer.is_null() {
+                std::slice::from_raw_parts(buffer_pointer, buffer_size as usize).to_vec()
+            } else {
+                Vec::new()
+            };
+
+            if !buffer_pointer.is_null() {
+                ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
+            }
+
+            // Prevent the destructor from calling avio_close on the freed buffer.
+            (*output_format_context).pb = std::ptr::null_mut();
+            ffmpeg_sys_next::avformat_free_context(output_format_context);
+
+            Ok(result_bytes)
+        }
     }
 
     /// Extract the complete audio track asynchronously.

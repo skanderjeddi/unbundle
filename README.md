@@ -2,6 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/unbundle)](https://crates.io/crates/unbundle)
 [![docs.rs](https://img.shields.io/docsrs/unbundle)](https://docs.rs/unbundle)
+[![CI](https://github.com/skanderjeddi/unbundle/actions/workflows/ci.yml/badge.svg)](https://github.com/skanderjeddi/unbundle/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/crates/l/unbundle)](LICENSE)
 
 A clean, ergonomic Rust library for extracting video frames, audio tracks, and subtitles from media files using FFmpeg.
@@ -41,14 +42,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "4.2"
+unbundle = "4.3.3"
 ```
 
 Or with additional features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.2", features = ["async", "rayon", "hardware"] }
+unbundle = { version = "4.3.3", features = ["async", "rayon", "hardware"] }
 ```
 
 ### System Requirements
@@ -70,13 +71,23 @@ brew install ffmpeg pkg-config
 
 **Windows:**
 
-Download FFmpeg development builds from <https://ffmpeg.org/download.html> or use vcpkg:
+Use vcpkg (recommended for headers + libs):
 
 ```powershell
+# Install vcpkg if needed
+git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+
+# Install FFmpeg for MSVC x64
 vcpkg install ffmpeg:x64-windows
+
+# Configure environment for build scripts
+setx VCPKG_ROOT "C:\vcpkg"
+setx VCPKGRS_DYNAMIC "1"
+setx FFMPEG_DIR "C:\vcpkg\installed\x64-windows"
 ```
 
-Set `FFMPEG_DIR` environment variable if FFmpeg is not in your PATH.
+Then restart your terminal and run `cargo build`.
 
 ## Quick Start
 
@@ -117,6 +128,21 @@ let frames = unbundler.video().frames(
 let frames = unbundler.video().frames(
     FrameRange::Specific(vec![0, 50, 100, 150])
 )?;
+```
+
+### Apply FFmpeg Filters to Frames
+
+```rust
+use unbundle::MediaFile;
+
+let mut unbundler = MediaFile::open("input.mp4")?;
+
+// Resize + adjust contrast in one FFmpeg filter graph.
+let frame = unbundler
+    .video()
+    .frame_with_filter(0, "scale=320:240,eq=contrast=1.1")?;
+
+frame.save("filtered.png")?;
 ```
 
 ### Streaming Frame Iteration
@@ -189,6 +215,57 @@ unbundler.subtitle().save("output.srt", SubtitleFormat::Srt)?;
 unbundler.subtitle_track(1)?.save("track2.vtt", SubtitleFormat::WebVtt)?;
 ```
 
+### Raw Stream Copy (No Re-encode)
+
+```rust
+use std::time::Duration;
+use unbundle::MediaFile;
+
+let mut unbundler = MediaFile::open("input.mp4")?;
+
+// Copy video packets exactly as-is (codec preserved)
+unbundler.video().stream_copy("video_copy.mp4")?;
+
+// Copy a time segment without decoding/re-encoding
+unbundler.video().stream_copy_range(
+    "segment.mp4",
+    Duration::from_secs(10),
+    Duration::from_secs(20),
+)?;
+
+// In-memory stream copy
+let mkv_bytes = unbundler.video().stream_copy_to_memory("matroska")?;
+
+// Audio stream copy (codec preserved)
+unbundler.audio().stream_copy("audio_copy.aac")?;
+let adts_bytes = unbundler.audio().stream_copy_to_memory("adts")?;
+
+// Subtitle stream copy (codec preserved)
+unbundler.subtitle().stream_copy("subs_copy.mkv")?;
+let subtitle_bytes = unbundler.subtitle().stream_copy_to_memory("matroska")?;
+```
+
+### Advanced Filter Graph Recipes
+
+```rust
+use unbundle::MediaFile;
+
+let mut unbundler = MediaFile::open("input.mp4")?;
+
+// Complex chain: resize -> crop -> mirror -> color adjust
+let frame = unbundler.video().frame_with_filter(
+    42,
+    "scale=640:480,crop=320:240:10:20,hflip,transpose=1",
+)?;
+frame.save("filtered_advanced.png")?;
+
+// Another chain: downscale + grayscale + mirror
+let frame = unbundler
+    .video()
+    .frame_with_filter(42, "scale=iw/2:ih/2,format=gray,hflip")?;
+frame.save("filtered_denoise_gray.png")?;
+```
+
 ### Progress & Cancellation
 
 ```rust
@@ -227,6 +304,7 @@ let frames = unbundler.video().frames_with_options(
 - **Container remuxing** — lossless format conversion (e.g. MKV → MP4) without re-encoding
 - **Rich metadata** — video dimensions, frame rate, frame count, audio sample rate, channels, codec info, multi-track audio/subtitle metadata
 - **Configurable output** — pixel format (RGB8, RGBA8, GRAY8), target resolution with aspect ratio preservation
+- **Custom FFmpeg filters** — apply filter graphs during frame extraction (e.g. scale, crop, eq, hflip)
 - **Progress & cancellation** — cooperative progress callbacks and `CancellationToken` for long-running operations
 - **Streaming iteration** — lazy `FrameIterator` (pull-based) and `for_each_frame` (push-based) without buffering entire frame sets
 - **Audio sample iteration** — lazy `AudioIterator` yields mono f32 chunks for incremental audio processing
@@ -239,6 +317,7 @@ let frames = unbundler.video().frames_with_options(
 - **Keyframe & Group of Pictures analysis** — scan video packets for keyframe positions and Group of Pictures structure without decoding
 - **VFR detection** — detect variable frame rate streams and analyze PTS distributions
 - **Packet iteration** — raw packet-level demuxer iteration for advanced inspection
+- **Raw stream copy** — copy video/audio/subtitle packets directly to file or memory without re-encoding
 - **Efficient seeking** — seeks to the nearest keyframe, then decodes forward
 - **Zero-copy in-memory audio** — uses FFmpeg's dynamic buffer I/O
 
@@ -261,7 +340,7 @@ Enable additional functionality through Cargo features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.2", features = ["full"] }
+unbundle = { version = "4.3.3", features = ["full"] }
 ```
 
 #### Feature Usage Guide

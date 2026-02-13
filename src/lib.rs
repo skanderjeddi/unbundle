@@ -64,10 +64,12 @@
 //! - **Subtitle extraction** — decode text-based subtitles to SRT, WebVTT, or
 //!   raw text
 //! - **Container remuxing** — lossless format conversion (e.g. MKV → MP4)
+//! - **Raw stream copy** — packet-level stream extraction to file/memory without re-encoding
 //! - **Rich metadata** — video dimensions, frame rate, frame count, audio
 //!   sample rate, channels, codec info, multi-track audio/subtitle metadata
 //! - **Configurable output** — pixel format (RGB8, RGBA8, GRAY8) and target
 //!   resolution with aspect ratio preservation
+//! - **Custom FFmpeg filters** — apply filter graphs during frame extraction
 //! - **Progress & cancellation** — cooperative callbacks and
 //!   `CancellationToken` for long-running operations
 //! - **Streaming iteration** — lazy `FrameIterator` (pull-based) and

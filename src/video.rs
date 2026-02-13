@@ -5,18 +5,23 @@
 //! Extracted frames are returned as [`image::DynamicImage`] values that can be
 //! saved, manipulated, or converted to other formats.
 
+use std::ffi::CString;
 use std::path::Path;
 use std::time::Duration;
 
 use ffmpeg_next::{
     Rational,
+    codec::Id,
     codec::context::Context as CodecContext,
     decoder::Video as VideoDecoder,
+    filter::Graph as FilterGraph,
     format::Pixel,
     frame::Video as VideoFrame,
+    packet::Mut as PacketMut,
     software::scaling::{Context as ScalingContext, Flags as ScalingFlags},
     util::picture::Type as PictureType,
 };
+use ffmpeg_sys_next::{AVFormatContext, AVPixelFormat, AVRational};
 use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 
 #[cfg(feature = "gif")]
@@ -452,6 +457,204 @@ impl<'a> VideoHandle<'a> {
         )))
     }
 
+    /// Extract a single frame, process it through a custom FFmpeg filter graph,
+    /// and return the filtered image.
+    ///
+    /// `filter_spec` uses standard FFmpeg filter syntax (for example,
+    /// `"scale=320:240"`, `"hflip"`, `"eq=brightness=0.05"`).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`frame`](VideoHandle::frame), plus
+    /// [`UnbundleError::FilterGraphError`] if filter graph creation or
+    /// execution fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaFile, UnbundleError};
+    ///
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// let frame = unbundler
+    ///     .video()
+    ///     .frame_with_filter(0, "scale=320:240,eq=contrast=1.1")?;
+    /// frame.save("filtered.png")?;
+    /// # Ok::<(), UnbundleError>(())
+    /// ```
+    pub fn frame_with_filter(
+        &mut self,
+        frame_number: u64,
+        filter_spec: &str,
+    ) -> Result<DynamicImage, UnbundleError> {
+        self.frame_with_filter_with_options(frame_number, filter_spec, &ExtractOptions::default())
+    }
+
+    /// Extract a single frame with a custom FFmpeg filter graph and extraction
+    /// options.
+    ///
+    /// Like [`frame_with_filter`](VideoHandle::frame_with_filter), but also
+    /// respects output pixel format, target resolution, and cancellation from
+    /// the provided [`ExtractOptions`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::Cancelled`] if cancellation is requested, or
+    /// any error from [`frame_with_filter`](VideoHandle::frame_with_filter).
+    pub fn frame_with_filter_with_options(
+        &mut self,
+        frame_number: u64,
+        filter_spec: &str,
+        config: &ExtractOptions,
+    ) -> Result<DynamicImage, UnbundleError> {
+        if filter_spec.trim().is_empty() {
+            return Err(UnbundleError::FilterGraphError(
+                "Filter specification cannot be empty".to_string(),
+            ));
+        }
+
+        let video_stream_index = self.resolve_video_stream_index()?;
+
+        let video_metadata = self
+            .unbundler
+            .metadata
+            .video
+            .as_ref()
+            .ok_or(UnbundleError::NoVideoStream)?;
+
+        let total_frames = video_metadata.frame_count;
+        let frames_per_second = video_metadata.frames_per_second;
+        let output_pixel = config.frame_output.pixel_format.to_ffmpeg_pixel();
+
+        if total_frames > 0 && frame_number >= total_frames {
+            return Err(UnbundleError::FrameOutOfRange {
+                frame_number,
+                total_frames,
+            });
+        }
+
+        if config.is_cancelled() {
+            return Err(UnbundleError::Cancelled);
+        }
+
+        log::debug!(
+            "Extracting filtered frame {} (filter='{}', stream={})",
+            frame_number,
+            filter_spec,
+            video_stream_index
+        );
+
+        let stream = self
+            .unbundler
+            .input_context
+            .stream(video_stream_index)
+            .ok_or(UnbundleError::NoVideoStream)?;
+        let time_base = stream.time_base();
+        let codec_parameters = stream.parameters();
+        let decoder_context = CodecContext::from_parameters(codec_parameters)?;
+        let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
+
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(frame_number, frames_per_second);
+
+        self.unbundler
+            .input_context
+            .seek(seek_timestamp, ..seek_timestamp)?;
+
+        let mut decoded_frame = VideoFrame::empty();
+
+        for (stream, packet) in self.unbundler.input_context.packets() {
+            if config.is_cancelled() {
+                return Err(UnbundleError::Cancelled);
+            }
+
+            if stream.index() != video_stream_index {
+                continue;
+            }
+
+            decoder.send_packet(&packet)?;
+
+            while decoder.receive_frame(&mut decoded_frame).is_ok() {
+                let pts = decoded_frame.pts().unwrap_or(0);
+                let current_frame_number =
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+
+                if current_frame_number >= frame_number {
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                    let source = transferred.as_ref().unwrap_or(&decoded_frame);
+                    let filtered = apply_filter_graph_to_frame(source, time_base, filter_spec)?;
+
+                    let (target_width, target_height) = config
+                        .frame_output
+                        .resolve_dimensions(filtered.width(), filtered.height());
+
+                    let mut scaler = ScalingContext::get(
+                        filtered.format(),
+                        filtered.width(),
+                        filtered.height(),
+                        output_pixel,
+                        target_width,
+                        target_height,
+                        ScalingFlags::BILINEAR,
+                    )?;
+
+                    let mut scaled_frame = VideoFrame::empty();
+                    scaler.run(&filtered, &mut scaled_frame)?;
+                    return convert_frame_to_image(
+                        &scaled_frame,
+                        target_width,
+                        target_height,
+                        &config.frame_output,
+                    );
+                }
+            }
+        }
+
+        decoder.send_eof()?;
+        while decoder.receive_frame(&mut decoded_frame).is_ok() {
+            if config.is_cancelled() {
+                return Err(UnbundleError::Cancelled);
+            }
+
+            let pts = decoded_frame.pts().unwrap_or(0);
+            let current_frame_number =
+                crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+
+            if current_frame_number >= frame_number {
+                let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                let source = transferred.as_ref().unwrap_or(&decoded_frame);
+                let filtered = apply_filter_graph_to_frame(source, time_base, filter_spec)?;
+
+                let (target_width, target_height) = config
+                    .frame_output
+                    .resolve_dimensions(filtered.width(), filtered.height());
+
+                let mut scaler = ScalingContext::get(
+                    filtered.format(),
+                    filtered.width(),
+                    filtered.height(),
+                    output_pixel,
+                    target_width,
+                    target_height,
+                    ScalingFlags::BILINEAR,
+                )?;
+
+                let mut scaled_frame = VideoFrame::empty();
+                scaler.run(&filtered, &mut scaled_frame)?;
+                return convert_frame_to_image(
+                    &scaled_frame,
+                    target_width,
+                    target_height,
+                    &config.frame_output,
+                );
+            }
+        }
+
+        Err(UnbundleError::VideoDecodeError(format!(
+            "Could not locate frame {frame_number} in the video stream"
+        )))
+    }
+
     /// Extract a single frame at a specific timestamp.
     ///
     /// Converts the timestamp to a frame number using the video's frame rate
@@ -825,6 +1028,138 @@ impl<'a> VideoHandle<'a> {
         let image = self.frame_at(timestamp)?;
         image.save(path)?;
         Ok(())
+    }
+
+    // ── Stream copy (lossless) ─────────────────────────────────────────
+
+    /// Copy the video stream verbatim to a file without re-encoding.
+    ///
+    /// Unlike frame extraction methods, this copies packets directly from the
+    /// input stream, preserving the original codec and quality. The output
+    /// container format is inferred from the file extension.
+    ///
+    /// This is equivalent to `ffmpeg -i input.mp4 -an -sn -c:v copy output.mp4`.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::NoVideoStream`] if no video stream exists.
+    /// - [`UnbundleError::StreamCopyError`] if the output container does
+    ///   not support the source codec.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaFile, UnbundleError};
+    ///
+    /// let mut unbundler = MediaFile::open("input.mp4")?;
+    /// unbundler.video().stream_copy("output.mp4")?;
+    /// # Ok::<(), UnbundleError>(())
+    /// ```
+    pub fn stream_copy<P: AsRef<Path>>(&mut self, path: P) -> Result<(), UnbundleError> {
+        self.copy_stream_to_file(path.as_ref(), None, None, None)
+    }
+
+    /// Copy a video segment verbatim to a file without re-encoding.
+    ///
+    /// Like [`stream_copy`](VideoHandle::stream_copy) but copies only
+    /// packets between `start` and `end`. Because there is no re-encoding,
+    /// the actual boundaries are aligned to packet/keyframe boundaries.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::InvalidRange`] if `start >= end`.
+    /// - Plus any errors from [`stream_copy`](VideoHandle::stream_copy).
+    pub fn stream_copy_range<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        start: Duration,
+        end: Duration,
+    ) -> Result<(), UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        self.copy_stream_to_file(path.as_ref(), Some(start), Some(end), None)
+    }
+
+    /// Copy the video stream verbatim to a file with cancellation support.
+    ///
+    /// Like [`stream_copy`](VideoHandle::stream_copy) but accepts an
+    /// [`ExtractOptions`] for cancellation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnbundleError::Cancelled`] if cancellation is requested,
+    /// or any error from [`stream_copy`](VideoHandle::stream_copy).
+    pub fn stream_copy_with_options<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        config: &ExtractOptions,
+    ) -> Result<(), UnbundleError> {
+        self.copy_stream_to_file(path.as_ref(), None, None, Some(config))
+    }
+
+    /// Copy a video segment verbatim to a file with cancellation support.
+    ///
+    /// Like [`stream_copy_range`](VideoHandle::stream_copy_range) but
+    /// accepts an [`ExtractOptions`].
+    pub fn stream_copy_range_with_options<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        start: Duration,
+        end: Duration,
+        config: &ExtractOptions,
+    ) -> Result<(), UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        self.copy_stream_to_file(path.as_ref(), Some(start), Some(end), Some(config))
+    }
+
+    /// Copy the video stream verbatim to memory without re-encoding.
+    ///
+    /// `container_format` is the FFmpeg short name for the output container
+    /// (for example: `"matroska"`, `"mp4"`, `"mpegts"`).
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::NoVideoStream`] if no video stream exists.
+    /// - [`UnbundleError::StreamCopyError`] if the container format is
+    ///   invalid or does not support the source codec.
+    pub fn stream_copy_to_memory(
+        &mut self,
+        container_format: &str,
+    ) -> Result<Vec<u8>, UnbundleError> {
+        self.copy_stream_to_memory(container_format, None, None, None)
+    }
+
+    /// Copy a video segment verbatim to memory without re-encoding.
+    ///
+    /// Like [`stream_copy_to_memory`](VideoHandle::stream_copy_to_memory) but
+    /// copies only packets between `start` and `end`.
+    ///
+    /// # Errors
+    ///
+    /// - [`UnbundleError::InvalidRange`] if `start >= end`.
+    /// - Plus any errors from [`stream_copy_to_memory`](VideoHandle::stream_copy_to_memory).
+    pub fn stream_copy_range_to_memory(
+        &mut self,
+        container_format: &str,
+        start: Duration,
+        end: Duration,
+    ) -> Result<Vec<u8>, UnbundleError> {
+        if start >= end {
+            return Err(UnbundleError::InvalidRange {
+                start: format!("{start:?}"),
+                end: format!("{end:?}"),
+            });
+        }
+        self.copy_stream_to_memory(container_format, Some(start), Some(end), None)
     }
 
     /// Extract multiple frames according to the specified range.
@@ -2374,6 +2709,274 @@ impl<'a> VideoHandle<'a> {
 
         Ok(())
     }
+
+    // ── Stream copy (lossless) helpers ──────────────────────────────
+
+    /// Copy the video stream verbatim to a file without decoding or
+    /// re-encoding. Container format is inferred from the file extension.
+    fn copy_stream_to_file(
+        &mut self,
+        path: &Path,
+        start: Option<Duration>,
+        end: Option<Duration>,
+        config: Option<&ExtractOptions>,
+    ) -> Result<(), UnbundleError> {
+        let video_stream_index = self.resolve_video_stream_index()?;
+        log::debug!(
+            "Stream-copying video to file {:?} (stream={})",
+            path,
+            video_stream_index
+        );
+
+        let stream = self
+            .unbundler
+            .input_context
+            .stream(video_stream_index)
+            .ok_or(UnbundleError::NoVideoStream)?;
+        let input_time_base = stream.time_base();
+
+        let mut output_context = ffmpeg_next::format::output(&path).map_err(|error| {
+            UnbundleError::StreamCopyError(format!("Failed to create output: {error}"))
+        })?;
+
+        {
+            let mut out_stream = output_context
+                .add_stream(ffmpeg_next::encoder::find(Id::None))
+                .map_err(|error| {
+                    UnbundleError::StreamCopyError(format!("Failed to add stream: {error}"))
+                })?;
+            out_stream.set_parameters(stream.parameters());
+            unsafe {
+                (*out_stream.parameters().as_mut_ptr()).codec_tag = 0;
+            }
+        }
+
+        output_context.write_header().map_err(|error| {
+            UnbundleError::StreamCopyError(format!("Failed to write header: {error}"))
+        })?;
+
+        if let Some(start_time) = start {
+            let seek_timestamp = crate::conversion::duration_to_seek_timestamp(start_time);
+            self.unbundler
+                .input_context
+                .seek(seek_timestamp, ..seek_timestamp)?;
+        }
+
+        let end_stream_timestamp = end.map(|end_time| {
+            crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
+        });
+
+        let output_time_base = output_context.stream(0).unwrap().time_base();
+
+        for (stream, mut packet) in self.unbundler.input_context.packets() {
+            if let Some(active_config) = config
+                && active_config.is_cancelled()
+            {
+                return Err(UnbundleError::Cancelled);
+            }
+            if stream.index() != video_stream_index {
+                continue;
+            }
+
+            if let Some(end_timestamp) = end_stream_timestamp
+                && let Some(pts) = packet.pts()
+                && pts > end_timestamp
+            {
+                break;
+            }
+
+            packet.set_stream(0);
+            packet.rescale_ts(input_time_base, output_time_base);
+            packet.set_position(-1);
+            packet
+                .write_interleaved(&mut output_context)
+                .map_err(|error| {
+                    UnbundleError::StreamCopyError(format!("Failed to write packet: {error}"))
+                })?;
+        }
+
+        output_context.write_trailer().map_err(|error| {
+            UnbundleError::StreamCopyError(format!("Failed to write trailer: {error}"))
+        })?;
+
+        Ok(())
+    }
+
+    /// Copy the video stream verbatim to memory without decoding or
+    /// re-encoding, using FFmpeg dynamic buffer I/O.
+    fn copy_stream_to_memory(
+        &mut self,
+        container_format: &str,
+        start: Option<Duration>,
+        end: Option<Duration>,
+        config: Option<&ExtractOptions>,
+    ) -> Result<Vec<u8>, UnbundleError> {
+        let video_stream_index = self.resolve_video_stream_index()?;
+        log::debug!(
+            "Stream-copying video to memory (format={}, stream={})",
+            container_format,
+            video_stream_index
+        );
+
+        let stream = self
+            .unbundler
+            .input_context
+            .stream(video_stream_index)
+            .ok_or(UnbundleError::NoVideoStream)?;
+        let input_time_base = stream.time_base();
+        let codec_parameters = stream.parameters();
+
+        if let Some(start_time) = start {
+            let seek_timestamp = crate::conversion::duration_to_seek_timestamp(start_time);
+            self.unbundler
+                .input_context
+                .seek(seek_timestamp, ..seek_timestamp)?;
+        }
+
+        let end_stream_timestamp = end.map(|end_time| {
+            crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
+        });
+
+        unsafe {
+            let container_name_c = CString::new(container_format).map_err(|error| {
+                UnbundleError::StreamCopyError(format!("Invalid container format name: {error}"))
+            })?;
+
+            let mut output_format_context: *mut AVFormatContext = std::ptr::null_mut();
+            let allocation_result = ffmpeg_sys_next::avformat_alloc_output_context2(
+                &mut output_format_context,
+                std::ptr::null_mut(),
+                container_name_c.as_ptr(),
+                std::ptr::null(),
+            );
+            if allocation_result < 0 || output_format_context.is_null() {
+                return Err(UnbundleError::StreamCopyError(
+                    "Failed to allocate output format context".to_string(),
+                ));
+            }
+
+            let dynamic_buffer_result =
+                ffmpeg_sys_next::avio_open_dyn_buf(&mut (*output_format_context).pb);
+            if dynamic_buffer_result < 0 {
+                ffmpeg_sys_next::avformat_free_context(output_format_context);
+                return Err(UnbundleError::StreamCopyError(
+                    "Failed to open dynamic buffer".to_string(),
+                ));
+            }
+
+            let output_stream =
+                ffmpeg_sys_next::avformat_new_stream(output_format_context, std::ptr::null());
+            if output_stream.is_null() {
+                let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
+                ffmpeg_sys_next::avio_close_dyn_buf(
+                    (*output_format_context).pb,
+                    &mut buffer_pointer,
+                );
+                if !buffer_pointer.is_null() {
+                    ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
+                }
+                (*output_format_context).pb = std::ptr::null_mut();
+                ffmpeg_sys_next::avformat_free_context(output_format_context);
+                return Err(UnbundleError::StreamCopyError(
+                    "Failed to add output stream".to_string(),
+                ));
+            }
+
+            ffmpeg_sys_next::avcodec_parameters_copy(
+                (*output_stream).codecpar,
+                codec_parameters.as_ptr(),
+            );
+            (*(*output_stream).codecpar).codec_tag = 0;
+
+            (*output_stream).time_base = AVRational {
+                num: input_time_base.numerator(),
+                den: input_time_base.denominator(),
+            };
+
+            let write_header_result =
+                ffmpeg_sys_next::avformat_write_header(output_format_context, std::ptr::null_mut());
+            if write_header_result < 0 {
+                let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
+                ffmpeg_sys_next::avio_close_dyn_buf(
+                    (*output_format_context).pb,
+                    &mut buffer_pointer,
+                );
+                if !buffer_pointer.is_null() {
+                    ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
+                }
+                (*output_format_context).pb = std::ptr::null_mut();
+                ffmpeg_sys_next::avformat_free_context(output_format_context);
+                return Err(UnbundleError::StreamCopyError(
+                    "Failed to write output header".to_string(),
+                ));
+            }
+
+            let output_time_base = Rational::new(
+                (*output_stream).time_base.num,
+                (*output_stream).time_base.den,
+            );
+
+            for (stream, mut packet) in self.unbundler.input_context.packets() {
+                if let Some(active_config) = config
+                    && active_config.is_cancelled()
+                {
+                    let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
+                    ffmpeg_sys_next::avio_close_dyn_buf(
+                        (*output_format_context).pb,
+                        &mut buffer_pointer,
+                    );
+                    if !buffer_pointer.is_null() {
+                        ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
+                    }
+                    (*output_format_context).pb = std::ptr::null_mut();
+                    ffmpeg_sys_next::avformat_free_context(output_format_context);
+                    return Err(UnbundleError::Cancelled);
+                }
+
+                if stream.index() != video_stream_index {
+                    continue;
+                }
+
+                if let Some(end_timestamp) = end_stream_timestamp
+                    && let Some(pts) = packet.pts()
+                    && pts > end_timestamp
+                {
+                    break;
+                }
+
+                packet.set_stream(0);
+                packet.rescale_ts(input_time_base, output_time_base);
+                packet.set_position(-1);
+                ffmpeg_sys_next::av_interleaved_write_frame(
+                    output_format_context,
+                    packet.as_mut_ptr(),
+                );
+            }
+
+            ffmpeg_sys_next::av_write_trailer(output_format_context);
+
+            let mut buffer_pointer: *mut u8 = std::ptr::null_mut();
+            let buffer_size = ffmpeg_sys_next::avio_close_dyn_buf(
+                (*output_format_context).pb,
+                &mut buffer_pointer,
+            );
+
+            let result_bytes = if buffer_size > 0 && !buffer_pointer.is_null() {
+                std::slice::from_raw_parts(buffer_pointer, buffer_size as usize).to_vec()
+            } else {
+                Vec::new()
+            };
+
+            if !buffer_pointer.is_null() {
+                ffmpeg_sys_next::av_free(buffer_pointer as *mut _);
+            }
+
+            (*output_format_context).pb = std::ptr::null_mut();
+            ffmpeg_sys_next::avformat_free_context(output_format_context);
+
+            Ok(result_bytes)
+        }
+    }
 }
 
 /// Create a video decoder, optionally with hardware acceleration.
@@ -2441,6 +3044,92 @@ fn ensure_scaler(
         )?);
     }
     Ok(())
+}
+
+/// Apply a custom FFmpeg filter graph to a decoded frame.
+///
+/// The graph is built as: `buffer -> <filter_spec> -> buffersink`.
+fn apply_filter_graph_to_frame(
+    frame: &VideoFrame,
+    time_base: Rational,
+    filter_spec: &str,
+) -> Result<VideoFrame, UnbundleError> {
+    let mut graph = FilterGraph::new();
+
+    let pixel_format = AVPixelFormat::from(frame.format()) as i32;
+    let buffer_args = format!(
+        "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect=1/1",
+        frame.width(),
+        frame.height(),
+        pixel_format,
+        time_base.numerator(),
+        time_base.denominator(),
+    );
+
+    graph
+        .add(
+            &ffmpeg_next::filter::find("buffer").ok_or_else(|| {
+                UnbundleError::FilterGraphError("FFmpeg 'buffer' filter not found".to_string())
+            })?,
+            "in",
+            &buffer_args,
+        )
+        .map_err(|error| {
+            UnbundleError::FilterGraphError(format!("Failed to add buffer filter: {error}"))
+        })?;
+
+    graph
+        .add(
+            &ffmpeg_next::filter::find("buffersink").ok_or_else(|| {
+                UnbundleError::FilterGraphError("FFmpeg 'buffersink' filter not found".to_string())
+            })?,
+            "out",
+            "",
+        )
+        .map_err(|error| {
+            UnbundleError::FilterGraphError(format!("Failed to add buffersink filter: {error}"))
+        })?;
+
+    graph
+        .output("in", 0)
+        .map_err(|error| {
+            UnbundleError::FilterGraphError(format!("Filter graph output error: {error}"))
+        })?
+        .input("out", 0)
+        .map_err(|error| {
+            UnbundleError::FilterGraphError(format!("Filter graph input error: {error}"))
+        })?
+        .parse(filter_spec)
+        .map_err(|error| {
+            UnbundleError::FilterGraphError(format!("Filter graph parse error: {error}"))
+        })?;
+
+    graph.validate().map_err(|error| {
+        UnbundleError::FilterGraphError(format!("Filter graph validation error: {error}"))
+    })?;
+
+    graph
+        .get("in")
+        .ok_or_else(|| UnbundleError::FilterGraphError("Filter 'in' not found".to_string()))?
+        .source()
+        .add(frame)
+        .map_err(|error| {
+            UnbundleError::FilterGraphError(format!("Failed to feed filter graph: {error}"))
+        })?;
+
+    let mut filtered_frame = VideoFrame::empty();
+    graph
+        .get("out")
+        .ok_or_else(|| UnbundleError::FilterGraphError("Filter 'out' not found".to_string()))?
+        .sink()
+        .frame(&mut filtered_frame)
+        .map_err(|error| {
+            UnbundleError::FilterGraphError(format!(
+                "Filter graph did not produce an output frame: {error}"
+            ))
+        })?;
+
+    Ok(filtered_frame)
 }
 
 /// Convert a scaled video frame to an [`image::DynamicImage`].

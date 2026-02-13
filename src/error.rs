@@ -140,6 +140,14 @@ pub enum UnbundleError {
         /// Number of available video tracks.
         track_count: usize,
     },
+
+    /// Raw stream copy (packet-level extraction) failed.
+    #[error("Stream copy error: {0}")]
+    StreamCopyError(String),
+
+    /// FFmpeg filter graph setup or processing failed.
+    #[error("Filter graph error: {0}")]
+    FilterGraphError(String),
 }
 
 impl From<FfmpegError> for UnbundleError {

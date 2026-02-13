@@ -67,6 +67,8 @@ pub enum OperationType {
     WaveformGeneration,
     /// Analysing audio loudness levels.
     LoudnessAnalysis,
+    /// Copying stream packets without re-encoding.
+    StreamCopy,
 }
 
 /// A snapshot of extraction progress.
