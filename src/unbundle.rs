@@ -523,6 +523,7 @@ impl MediaFile {
         VideoHandle {
             unbundler: self,
             stream_index: None,
+            cached: None,
         }
     }
 
@@ -557,6 +558,7 @@ impl MediaFile {
         Ok(VideoHandle {
             unbundler: self,
             stream_index: Some(stream_index),
+            cached: None,
         })
     }
 

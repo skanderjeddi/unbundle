@@ -158,6 +158,30 @@ pub struct VideoHandle<'a> {
     pub(crate) unbundler: &'a mut MediaFile,
     /// Optional stream index override for multi-track selection.
     pub(crate) stream_index: Option<usize>,
+    /// Cached decoder/scaler state reused across consecutive
+    /// [`frame_with_options`](VideoHandle::frame_with_options) calls.
+    pub(crate) cached: Option<CachedDecoderState>,
+}
+
+/// Decoder and scaler state cached between consecutive single-frame
+/// extractions via [`VideoHandle::frame_with_options`].
+///
+/// Keeping the decoder alive avoids the overhead of re-creating the
+/// codec context and scaler on every call.  The cache is invalidated
+/// when the output configuration (dimensions, pixel format) changes.
+pub(crate) struct CachedDecoderState {
+    decoder: VideoDecoder,
+    scaler: ScalingContext,
+    time_base: Rational,
+    output_pixel: Pixel,
+    target_width: u32,
+    target_height: u32,
+    decoded_frame: VideoFrame,
+    scaled_frame: VideoFrame,
+    /// PTS of the last frame handed back to the caller.
+    last_pts: Option<i64>,
+    /// `true` after `send_eof()` has been called on the decoder.
+    eof_sent: bool,
 }
 
 impl<'a> VideoHandle<'a> {
@@ -255,90 +279,169 @@ impl<'a> VideoHandle<'a> {
             frames_per_second,
             video_stream_index
         );
-        let stream = self
-            .unbundler
-            .input_context
-            .stream(video_stream_index)
-            .ok_or(UnbundleError::NoVideoStream)?;
-        let time_base = stream.time_base();
-        let codec_parameters = stream.parameters();
-        let decoder_context = CodecContext::from_parameters(codec_parameters)?;
-        let mut decoder = decoder_context.decoder().video()?;
 
-        // Set up the pixel-format converter.
-        let mut scaler = ScalingContext::get(
-            decoder.format(),
-            decoder.width(),
-            decoder.height(),
-            output_pixel,
-            target_width,
-            target_height,
-            ScalingFlags::BILINEAR,
-        )?;
+        // ── Reuse or create decoder/scaler ──────────────────────────
+        let need_new = match &self.cached {
+            Some(c) => {
+                c.target_width != target_width
+                    || c.target_height != target_height
+                    || c.output_pixel != output_pixel
+            }
+            None => true,
+        };
 
-        // Seek to the nearest keyframe before the target frame.
+        if need_new {
+            let stream = self
+                .unbundler
+                .input_context
+                .stream(video_stream_index)
+                .ok_or(UnbundleError::NoVideoStream)?;
+            let time_base = stream.time_base();
+            let codec_parameters = stream.parameters();
+            let decoder_context = CodecContext::from_parameters(codec_parameters)?;
+            let decoder = decoder_context.decoder().video()?;
+
+            let scaler = ScalingContext::get(
+                decoder.format(),
+                decoder.width(),
+                decoder.height(),
+                output_pixel,
+                target_width,
+                target_height,
+                ScalingFlags::BILINEAR,
+            )?;
+
+            self.cached = Some(CachedDecoderState {
+                decoder,
+                scaler,
+                time_base,
+                output_pixel,
+                target_width,
+                target_height,
+                decoded_frame: VideoFrame::empty(),
+                scaled_frame: VideoFrame::empty(),
+                last_pts: None,
+                eof_sent: false,
+            });
+        }
+
+        // ── Decide: seek or decode forward ──────────────────────────
         let seek_timestamp =
             crate::conversion::frame_number_to_seek_timestamp(frame_number, frames_per_second);
 
-        // Seek in AV_TIME_BASE (microseconds) since input_context.seek()
-        // calls avformat_seek_file with stream_index = -1.
-        self.unbundler
-            .input_context
-            .seek(seek_timestamp, ..seek_timestamp)?;
+        let state = self.cached.as_mut().unwrap();
 
-        // Decode frames until we reach the target.
-        let mut decoded_frame = VideoFrame::empty();
-        let mut rgb_frame = VideoFrame::empty();
+        // Reset from EOF state if needed.
+        if state.eof_sent {
+            state.decoder.flush();
+            state.eof_sent = false;
+            state.last_pts = None;
+        }
 
-        for (stream, packet) in self.unbundler.input_context.packets() {
-            if stream.index() != video_stream_index {
-                continue;
+        let should_seek = match state.last_pts {
+            None => true,
+            Some(last) => {
+                let target_pts_approx =
+                    (frame_number as f64 / frames_per_second * state.time_base.denominator() as f64
+                        / state.time_base.numerator().max(1) as f64) as i64;
+                // Seek if target is before current position or >2 s ahead.
+                target_pts_approx < last
+                    || crate::conversion::pts_to_seconds(target_pts_approx - last, state.time_base)
+                        > 2.0
             }
+        };
 
-            decoder.send_packet(&packet)?;
+        if should_seek {
+            state.decoder.flush();
+            state.last_pts = None;
+            self.unbundler
+                .input_context
+                .seek(seek_timestamp, ..seek_timestamp)?;
+        }
 
-            while decoder.receive_frame(&mut decoded_frame).is_ok() {
-                let pts = decoded_frame.pts().unwrap_or(0);
+        // ── Try buffered frames first ───────────────────────────────
+        {
+            let state = self.cached.as_mut().unwrap();
+            while state
+                .decoder
+                .receive_frame(&mut state.decoded_frame)
+                .is_ok()
+            {
+                let pts = state.decoded_frame.pts().unwrap_or(0);
+                state.last_pts = Some(pts);
                 let current_frame_number =
-                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+                    crate::conversion::pts_to_frame_number(pts, state.time_base, frames_per_second);
 
-                if current_frame_number == frame_number {
-                    scaler.run(&decoded_frame, &mut rgb_frame)?;
+                if current_frame_number >= frame_number {
+                    state
+                        .scaler
+                        .run(&state.decoded_frame, &mut state.scaled_frame)?;
                     return convert_frame_to_image(
-                        &rgb_frame,
-                        target_width,
-                        target_height,
-                        &config.frame_output,
-                    );
-                }
-
-                // If we've gone past the target, the frame doesn't exist at
-                // this exact index — return the closest frame after a seek.
-                if current_frame_number > frame_number {
-                    scaler.run(&decoded_frame, &mut rgb_frame)?;
-                    return convert_frame_to_image(
-                        &rgb_frame,
-                        target_width,
-                        target_height,
+                        &state.scaled_frame,
+                        state.target_width,
+                        state.target_height,
                         &config.frame_output,
                     );
                 }
             }
         }
 
-        // Flush the decoder.
-        decoder.send_eof()?;
-        while decoder.receive_frame(&mut decoded_frame).is_ok() {
-            let pts = decoded_frame.pts().unwrap_or(0);
+        // ── Read new packets and decode ─────────────────────────────
+        for (stream, packet) in self.unbundler.input_context.packets() {
+            if stream.index() != video_stream_index {
+                continue;
+            }
+
+            let state = self.cached.as_mut().unwrap();
+            state.decoder.send_packet(&packet)?;
+
+            while state
+                .decoder
+                .receive_frame(&mut state.decoded_frame)
+                .is_ok()
+            {
+                let pts = state.decoded_frame.pts().unwrap_or(0);
+                state.last_pts = Some(pts);
+                let current_frame_number =
+                    crate::conversion::pts_to_frame_number(pts, state.time_base, frames_per_second);
+
+                if current_frame_number >= frame_number {
+                    state
+                        .scaler
+                        .run(&state.decoded_frame, &mut state.scaled_frame)?;
+                    return convert_frame_to_image(
+                        &state.scaled_frame,
+                        state.target_width,
+                        state.target_height,
+                        &config.frame_output,
+                    );
+                }
+            }
+        }
+
+        // ── Flush the decoder ───────────────────────────────────────
+        let state = self.cached.as_mut().unwrap();
+        state.decoder.send_eof()?;
+        state.eof_sent = true;
+
+        while state
+            .decoder
+            .receive_frame(&mut state.decoded_frame)
+            .is_ok()
+        {
+            let pts = state.decoded_frame.pts().unwrap_or(0);
+            state.last_pts = Some(pts);
             let current_frame_number =
-                crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+                crate::conversion::pts_to_frame_number(pts, state.time_base, frames_per_second);
 
             if current_frame_number >= frame_number {
-                scaler.run(&decoded_frame, &mut rgb_frame)?;
+                state
+                    .scaler
+                    .run(&state.decoded_frame, &mut state.scaled_frame)?;
                 return convert_frame_to_image(
-                    &rgb_frame,
-                    target_width,
-                    target_height,
+                    &state.scaled_frame,
+                    state.target_width,
+                    state.target_height,
                     &config.frame_output,
                 );
             }
