@@ -24,7 +24,10 @@ use ffmpeg_next::{
 use ffmpeg_sys_next::{AVFormatContext, AVRational};
 
 use crate::{
-    audio_iterator::AudioIterator, configuration::ExtractOptions, error::UnbundleError,
+    audio_iterator::AudioIterator,
+    configuration::ExtractOptions,
+    error::UnbundleError,
+    progress::{OperationType, ProgressTracker},
     unbundle::MediaFile,
 };
 
@@ -1227,6 +1230,15 @@ impl<'a> AudioHandle<'a> {
             crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
         });
 
+        let mut tracker = config.map(|active_config| {
+            ProgressTracker::new(
+                active_config.progress.clone(),
+                OperationType::StreamCopy,
+                None,
+                active_config.batch_size,
+            )
+        });
+
         let output_time_base = output_context.stream(0).unwrap().time_base();
 
         // Copy packets.
@@ -1255,6 +1267,14 @@ impl<'a> AudioHandle<'a> {
                 .map_err(|error| {
                     UnbundleError::StreamCopyError(format!("Failed to write packet: {error}"))
                 })?;
+
+            if let Some(active_tracker) = tracker.as_mut() {
+                active_tracker.advance(None, None);
+            }
+        }
+
+        if let Some(active_tracker) = tracker.as_mut() {
+            active_tracker.finish();
         }
 
         output_context.write_trailer().map_err(|error| {
@@ -1298,6 +1318,15 @@ impl<'a> AudioHandle<'a> {
 
         let end_stream_timestamp = end.map(|end_time| {
             crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
+        });
+
+        let mut tracker = config.map(|active_config| {
+            ProgressTracker::new(
+                active_config.progress.clone(),
+                OperationType::StreamCopy,
+                None,
+                active_config.batch_size,
+            )
         });
 
         // ── In-memory muxing via avio_open_dyn_buf ─────────────────
@@ -1426,6 +1455,14 @@ impl<'a> AudioHandle<'a> {
                     output_format_context,
                     packet.as_mut_ptr(),
                 );
+
+                if let Some(active_tracker) = tracker.as_mut() {
+                    active_tracker.advance(None, None);
+                }
+            }
+
+            if let Some(active_tracker) = tracker.as_mut() {
+                active_tracker.finish();
             }
 
             // Write the container trailer.

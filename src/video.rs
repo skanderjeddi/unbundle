@@ -2766,6 +2766,15 @@ impl<'a> VideoHandle<'a> {
             crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
         });
 
+        let mut tracker = config.map(|active_config| {
+            ProgressTracker::new(
+                active_config.progress.clone(),
+                OperationType::StreamCopy,
+                None,
+                active_config.batch_size,
+            )
+        });
+
         let output_time_base = output_context.stream(0).unwrap().time_base();
 
         for (stream, mut packet) in self.unbundler.input_context.packets() {
@@ -2793,6 +2802,14 @@ impl<'a> VideoHandle<'a> {
                 .map_err(|error| {
                     UnbundleError::StreamCopyError(format!("Failed to write packet: {error}"))
                 })?;
+
+            if let Some(active_tracker) = tracker.as_mut() {
+                active_tracker.advance(None, None);
+            }
+        }
+
+        if let Some(active_tracker) = tracker.as_mut() {
+            active_tracker.finish();
         }
 
         output_context.write_trailer().map_err(|error| {
@@ -2835,6 +2852,15 @@ impl<'a> VideoHandle<'a> {
 
         let end_stream_timestamp = end.map(|end_time| {
             crate::conversion::duration_to_stream_timestamp(end_time, input_time_base)
+        });
+
+        let mut tracker = config.map(|active_config| {
+            ProgressTracker::new(
+                active_config.progress.clone(),
+                OperationType::StreamCopy,
+                None,
+                active_config.batch_size,
+            )
         });
 
         unsafe {
@@ -2951,6 +2977,14 @@ impl<'a> VideoHandle<'a> {
                     output_format_context,
                     packet.as_mut_ptr(),
                 );
+
+                if let Some(active_tracker) = tracker.as_mut() {
+                    active_tracker.advance(None, None);
+                }
+            }
+
+            if let Some(active_tracker) = tracker.as_mut() {
+                active_tracker.finish();
             }
 
             ffmpeg_sys_next::av_write_trailer(output_format_context);

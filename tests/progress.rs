@@ -14,6 +14,10 @@ fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
 }
 
+fn sample_with_subtitles_path() -> &'static str {
+    "tests/fixtures/sample_with_subtitles.mkv"
+}
+
 // ── CancellationToken ──────────────────────────────────────────────
 
 #[test]
@@ -177,4 +181,100 @@ fn operation_type_debug() {
     let op = OperationType::FrameExtraction;
     let debug = format!("{op:?}");
     assert_eq!(debug, "FrameExtraction");
+}
+
+#[test]
+fn progress_reports_stream_copy_video_operation() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let recorder = Arc::new(RecordingProgress {
+        infos: std::sync::Mutex::new(Vec::new()),
+    });
+    let config = ExtractOptions::new()
+        .with_progress(recorder.clone())
+        .with_batch_size(1);
+
+    let output = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    let output_path = output.path().with_extension("mp4");
+
+    let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
+    unbundler
+        .video()
+        .stream_copy_with_options(&output_path, &config)
+        .expect("Failed to stream-copy video");
+
+    let infos = recorder.infos.lock().unwrap();
+    assert!(!infos.is_empty(), "Expected progress callbacks");
+    for info in infos.iter() {
+        assert_eq!(info.operation, OperationType::StreamCopy);
+    }
+
+    let _ = std::fs::remove_file(&output_path);
+}
+
+#[test]
+fn progress_reports_stream_copy_audio_operation() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let recorder = Arc::new(RecordingProgress {
+        infos: std::sync::Mutex::new(Vec::new()),
+    });
+    let config = ExtractOptions::new()
+        .with_progress(recorder.clone())
+        .with_batch_size(1);
+
+    let output = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    let output_path = output.path().with_extension("aac");
+
+    let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
+    unbundler
+        .audio()
+        .stream_copy_with_options(&output_path, &config)
+        .expect("Failed to stream-copy audio");
+
+    let infos = recorder.infos.lock().unwrap();
+    assert!(!infos.is_empty(), "Expected progress callbacks");
+    for info in infos.iter() {
+        assert_eq!(info.operation, OperationType::StreamCopy);
+    }
+
+    let _ = std::fs::remove_file(&output_path);
+}
+
+#[test]
+fn progress_reports_stream_copy_subtitle_operation() {
+    let path = sample_with_subtitles_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let recorder = Arc::new(RecordingProgress {
+        infos: std::sync::Mutex::new(Vec::new()),
+    });
+    let config = ExtractOptions::new()
+        .with_progress(recorder.clone())
+        .with_batch_size(1);
+
+    let output = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    let output_path = output.path().with_extension("mkv");
+
+    let mut unbundler = MediaFile::open(path).expect("Failed to open fixture");
+    unbundler
+        .subtitle()
+        .stream_copy_with_options(&output_path, &config)
+        .expect("Failed to stream-copy subtitle");
+
+    let infos = recorder.infos.lock().unwrap();
+    assert!(!infos.is_empty(), "Expected progress callbacks");
+    for info in infos.iter() {
+        assert_eq!(info.operation, OperationType::StreamCopy);
+    }
+
+    let _ = std::fs::remove_file(&output_path);
 }

@@ -38,10 +38,7 @@ fn frame_with_complex_filter_chain_changes_dimensions() {
     let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
     let frame = unbundler
         .video()
-        .frame_with_filter(
-            5,
-            "scale=640:480,crop=320:240:10:20,hflip,transpose=1",
-        )
+        .frame_with_filter(5, "scale=640:480,crop=320:240:10:20,hflip,transpose=1")
         .expect("Failed to extract frame with complex filter chain");
 
     assert_eq!(frame.width(), 240);
