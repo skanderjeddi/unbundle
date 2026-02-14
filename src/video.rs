@@ -1529,65 +1529,6 @@ impl<'a> VideoHandle<'a> {
         Ok(())
     }
 
-    /// Process decoded frames without converting to [`DynamicImage`].
-    ///
-    /// This avoids image conversion overhead and lets callers feed frames to
-    /// custom pipelines (e.g. GPU upload, OpenCV interop) directly.
-    pub fn for_each_frame_raw<F>(
-        &mut self,
-        range: FrameRange,
-        callback: F,
-    ) -> Result<(), UnbundleError>
-    where
-        F: FnMut(u64, &VideoFrame) -> Result<(), UnbundleError>,
-    {
-        self.for_each_frame_raw_with_options(range, &ExtractOptions::default(), callback)
-    }
-
-    /// Process decoded frames without converting to images, with
-    /// progress/cancellation support.
-    pub fn for_each_frame_raw_with_options<F>(
-        &mut self,
-        range: FrameRange,
-        config: &ExtractOptions,
-        mut callback: F,
-    ) -> Result<(), UnbundleError>
-    where
-        F: FnMut(u64, &VideoFrame) -> Result<(), UnbundleError>,
-    {
-        let video_metadata = self
-            .unbundler
-            .metadata
-            .video
-            .as_ref()
-            .ok_or(UnbundleError::NoVideoStream)?
-            .clone();
-
-        let total =
-            Self::estimate_frame_count(&range, &video_metadata, self.unbundler.metadata.duration);
-
-        let mut tracker = ProgressTracker::new(
-            config.progress.clone(),
-            OperationType::FrameExtraction,
-            total,
-            config.batch_size,
-        );
-
-        self.dispatch_range_raw(
-            range,
-            &video_metadata,
-            config,
-            &mut |frame_number, frame| {
-                callback(frame_number, frame)?;
-                tracker.advance(Some(frame_number), None);
-                Ok(())
-            },
-        )?;
-
-        tracker.finish();
-        Ok(())
-    }
-
     /// Process decoded frames as zero-copy byte slices plus metadata.
     ///
     /// Unlike [`for_each_frame`](VideoHandle::for_each_frame), this avoids

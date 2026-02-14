@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [Unreleased]
+
+### Changed
+- Consolidated raw-frame callback APIs onto `for_each_raw_frame` / `for_each_raw_frame_with_options`.
+- Removed `for_each_frame_raw` and `for_each_frame_raw_with_options` in favor of the crate-owned `RawFrameView` callback shape.
+
 ## [4.3.8] - 2026-02-14
 
 ### Added
