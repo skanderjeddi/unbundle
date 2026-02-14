@@ -4,11 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [5.0.0] - 2026-02-14
+
+### Added
+- Added `MediaFile::probe_only()` for lightweight metadata probing without retaining an open demuxer.
+- Added `FrameRange::KeyframesOnly` to extract keyframes directly.
+- Added zero-copy raw frame callback API:
+  - `for_each_raw_frame`
+  - `for_each_raw_frame_with_options`
+- Added bitmap subtitle rendering helpers:
+  - `SubtitleHandle::render_at(...)`
+  - `BitmapSubtitleEvent::as_image()`
 
 ### Changed
-- Consolidated raw-frame callback APIs onto `for_each_raw_frame` / `for_each_raw_frame_with_options`.
-- Removed `for_each_frame_raw` and `for_each_frame_raw_with_options` in favor of the crate-owned `RawFrameView` callback shape.
+- Consolidated raw-frame callback APIs on crate-owned `RawFrameView` callbacks.
+
+### Removed
+- Removed `for_each_frame_raw` and `for_each_frame_raw_with_options` in favor of `for_each_raw_frame` and `for_each_raw_frame_with_options`.
 
 ## [4.3.8] - 2026-02-14
 
@@ -136,6 +148,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 - Removed binary fixtures from git and updated ignore rules.
 
+[Unreleased]: https://github.com/skanderjeddi/unbundle/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/skanderjeddi/unbundle/compare/v4.3.8...v5.0.0
 [4.3.8]: https://github.com/skanderjeddi/unbundle/compare/v4.3.7...v4.3.8
 [4.3.7]: https://github.com/skanderjeddi/unbundle/compare/v4.3.6...v4.3.7
 [4.3.6]: https://github.com/skanderjeddi/unbundle/compare/v4.3.5...v4.3.6
