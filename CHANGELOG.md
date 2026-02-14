@@ -4,16 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+Note: this changelog is reconstructed from git commit history. The repository currently has no git tags, so version boundaries are inferred from release/bump commit messages.
+
 ## [4.3.7] - 2026-02-14
 
 ### Added
 - Added a first-party CLI MVP as `unbundle-cli` with common commands:
   - `metadata`
   - `frame`
+  - `frame-at`
   - `audio`
   - `subtitle`
 - Added a best-effort Windows build helper (`build.rs`) that detects vcpkg-style FFmpeg installs and emits actionable setup warnings.
 - Added this changelog.
+- Added video-encoder alias builder test coverage.
 
 ### Improved
 - Added additional alias-coverage integration tests for builder-style APIs.
@@ -41,19 +45,87 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Improved
 - Added integration coverage for source-opening and builder aliases.
+- Added waveform alias-builder test coverage.
 
 ## [4.3.3] - 2026-02-14
 
 ### Added
 - Added stream-copy progress callback reporting for video/audio/subtitle operations.
 - Added advanced filter-chain coverage in tests.
+- Added stream-copy test coverage and CI matrix/documentation updates.
 
 ## [4.3.2] - 2026-02-14
 
 ### Added
 - Added custom FFmpeg filter graph frame extraction APIs.
 
+### Fixed
+- Fixed a `rayon.rs` typo as part of the release bump commit.
+
 ## [4.3.1] - 2026-02-14
 
 ### Added
-- Added raw stream-copy support for video and expanded stream-copy test coverage across media types.
+- Added FFmpeg log-level configuration API (`FfmpegLogLevel`, `set_ffmpeg_log_level`, `get_ffmpeg_log_level`).
+
+### Fixed
+- Improved robustness of media open by skipping attached-picture streams and treating decoder creation failures as non-fatal per stream.
+
+### Improved
+- Applied comprehensive style and formatting audit.
+
+## [4.2.2] - 2026-02-13
+
+### Improved
+- Cached decoder/scaler state in `VideoHandle::frame_with_options` for repeated single-frame extraction performance.
+
+## [4.2.1] - 2026-02-12
+
+### Added
+- Added scene-detection modes for practical operation (`Auto`, `Keyframes`) and bounded analysis controls (`max_duration`, `max_scene_changes`).
+
+### Fixed
+- Fixed scene detection seek timestamps and normalized pixel format handling.
+- Corrected `Pixel` → `AVPixelFormat` conversion.
+- Included colorspace/color-range in buffer filter setup and corrected FFmpeg buffer filter parameter names.
+
+### Improved
+- Applied scene-module formatting cleanup.
+
+## [4.0.0] - 2026-02-12
+
+### Changed
+- Refactored module/file naming to idiomatic conventions.
+- Reorganized public API exports.
+
+## [2.0.0] - 2026-02-12
+
+### Added
+- Added async/parallel examples and tests.
+
+### Changed
+- Restructured modules around expanded feature set.
+
+## [Pre-2.0 Milestones] - 2026-02-11 to 2026-02-12
+
+### Added
+- Initial project with core video/audio extraction.
+- `FrameIterator` for lazy pull-based frame decoding.
+- `PacketWriter` abstraction for audio output pathways.
+- Optional features: async extraction, scene detection, subtitles, hardware acceleration, and parallel extraction.
+- MediaProbe, thumbnails, chapter metadata, frame metadata, and segmented extraction.
+- GIF export, waveform/loudness analysis, transcoding, video encoding, keyframe/Group of Pictures analysis, variable frame rate analysis, and packet/audio iterators.
+
+### Changed
+- Removed binary fixtures from git and updated ignore rules.
+
+[4.3.7]: https://github.com/skanderjeddi/unbundle/compare/v4.3.6...v4.3.7
+[4.3.6]: https://github.com/skanderjeddi/unbundle/compare/v4.3.5...v4.3.6
+[4.3.5]: https://github.com/skanderjeddi/unbundle/compare/v4.3.4...v4.3.5
+[4.3.4]: https://github.com/skanderjeddi/unbundle/compare/v4.3.3...v4.3.4
+[4.3.3]: https://github.com/skanderjeddi/unbundle/compare/v4.3.2...v4.3.3
+[4.3.2]: https://github.com/skanderjeddi/unbundle/compare/v4.3.1...v4.3.2
+[4.3.1]: https://github.com/skanderjeddi/unbundle/compare/v4.2.2...v4.3.1
+[4.2.2]: https://github.com/skanderjeddi/unbundle/compare/v4.2.1...v4.2.2
+[4.2.1]: https://github.com/skanderjeddi/unbundle/compare/v4.0.0...v4.2.1
+[4.0.0]: https://github.com/skanderjeddi/unbundle/compare/v2.0.0...v4.0.0
+[2.0.0]: https://github.com/skanderjeddi/unbundle/compare/eaafb1e...v2.0.0
