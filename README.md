@@ -204,3 +204,5 @@ cargo bench --all-features
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+100% vibe-coded with ❤️ using Claude Opus 4.6 by [Skander Jeddi](https://github.com/skanderjeddi) ✨
