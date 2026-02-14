@@ -46,6 +46,25 @@ fn frame_with_complex_filter_chain_changes_dimensions() {
 }
 
 #[test]
+fn chainable_filter_api_changes_dimensions() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
+    let frame = unbundler
+        .video()
+        .filter("scale=320:240")
+        .filter("transpose=1")
+        .frame(0)
+        .expect("Failed to extract frame with chainable filter API");
+
+    assert_eq!(frame.width(), 240);
+    assert_eq!(frame.height(), 320);
+}
+
+#[test]
 fn frame_with_filter_invalid_spec_returns_error() {
     let path = sample_video_path();
     if !Path::new(path).exists() {
