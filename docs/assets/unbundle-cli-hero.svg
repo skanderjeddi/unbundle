@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">unbundle CLI Hero</title>
+  <desc id="desc">Terminal-style preview of unbundle CLI MVP commands for probe and extraction workflows.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#101a32"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="420" fill="url(#bg)" rx="16"/>
+  <rect x="24" y="24" width="1152" height="372" rx="12" fill="#0d1117" stroke="#30363d"/>
+  <circle cx="54" cy="50" r="7" fill="#ff5f57"/>
+  <circle cx="78" cy="50" r="7" fill="#febc2e"/>
+  <circle cx="102" cy="50" r="7" fill="#28c840"/>
+  <text x="132" y="55" fill="#8b949e" font-family="Consolas, Menlo, Monaco, monospace" font-size="16">unbundle-cli</text>
+
+  <text x="52" y="100" fill="#58a6ff" font-family="Consolas, Menlo, Monaco, monospace" font-size="20">$</text>
+  <text x="78" y="100" fill="#c9d1d9" font-family="Consolas, Menlo, Monaco, monospace" font-size="20">unbundle-cli probe input.mp4</text>
+  <text x="78" y="132" fill="#8b949e" font-family="Consolas, Menlo, Monaco, monospace" font-size="18">Format: mov,mp4,m4a,3gp,3g2,mj2</text>
+  <text x="78" y="158" fill="#8b949e" font-family="Consolas, Menlo, Monaco, monospace" font-size="18">Duration: 00:05:00</text>
+
+  <text x="52" y="206" fill="#58a6ff" font-family="Consolas, Menlo, Monaco, monospace" font-size="20">$</text>
+  <text x="78" y="206" fill="#c9d1d9" font-family="Consolas, Menlo, Monaco, monospace" font-size="20">unbundle-cli extract-frames input.mp4 --out frames --every 10</text>
+  <text x="78" y="236" fill="#7ee787" font-family="Consolas, Menlo, Monaco, monospace" font-size="18">Extracted 300 frame(s) to frames</text>
+
+  <text x="52" y="284" fill="#58a6ff" font-family="Consolas, Menlo, Monaco, monospace" font-size="20">$</text>
+  <text x="78" y="284" fill="#c9d1d9" font-family="Consolas, Menlo, Monaco, monospace" font-size="20">unbundle-cli extract-audio input.mp4 --format mp3 --out audio.mp3</text>
+  <text x="78" y="314" fill="#7ee787" font-family="Consolas, Menlo, Monaco, monospace" font-size="18">Saved audio.mp3</text>
+
+  <text x="52" y="352" fill="#58a6ff" font-family="Consolas, Menlo, Monaco, monospace" font-size="20">$</text>
+  <text x="78" y="352" fill="#c9d1d9" font-family="Consolas, Menlo, Monaco, monospace" font-size="20">unbundle-cli extract-subs input.mkv --format srt --out subs.srt</text>
+</svg>

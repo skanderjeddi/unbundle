@@ -1,12 +1,51 @@
 # unbundle
 
 [![Crates.io](https://img.shields.io/crates/v/unbundle)](https://crates.io/crates/unbundle)
+[![Crates.io Downloads](https://img.shields.io/crates/d/unbundle)](https://crates.io/crates/unbundle)
 [![docs.rs](https://img.shields.io/docsrs/unbundle)](https://docs.rs/unbundle)
 [![CI](https://github.com/skanderjeddi/unbundle/actions/workflows/ci.yml/badge.svg)](https://github.com/skanderjeddi/unbundle/actions/workflows/ci.yml)
+[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange)](https://www.rust-lang.org/)
 [![Changelog](https://img.shields.io/badge/changelog-releases-blue)](https://github.com/skanderjeddi/unbundle/releases)
 [![License: MIT](https://img.shields.io/crates/l/unbundle)](LICENSE)
 
 A clean, ergonomic Rust library for extracting video frames, audio tracks, and subtitles from media files using FFmpeg.
+
+<p align="center">
+    <img src="docs/assets/unbundle-cli-hero.svg" alt="unbundle CLI demo" width="860" />
+</p>
+
+## New: `unbundle-cli` MVP
+
+Install:
+
+```bash
+cargo install unbundle --bin unbundle-cli
+```
+
+Commands:
+
+```bash
+# Probe metadata
+unbundle-cli probe input.mp4
+
+# Extract frames
+unbundle-cli extract-frames input.mp4 --out frames --every 10 --start 0 --end 300
+
+# Extract full audio
+unbundle-cli extract-audio input.mp4 --format mp3 --out audio.mp3
+
+# Extract subtitle file
+unbundle-cli extract-subs input.mkv --format srt --out subs.srt
+```
+
+## Quick Comparison
+
+| Tool | Best for | Level | Notes |
+|---|---|---|---|
+| `unbundle` | Rust-native media extraction APIs | High-level | Strong typing, iterators, options, errors |
+| `unbundle-cli` | Simple extraction workflows | High-level | Friendly commands for common tasks |
+| `ffmpeg-next` | Building custom low-level media flows | Mid/Low-level | Flexible, but more boilerplate |
+| `ffmpeg` CLI | One-off shell pipelines | CLI-level | Powerful, but less ergonomic in Rust code |
 
 CI is passing on Linux, macOS, and Windows (see the CI badge above).
 Contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -112,9 +151,19 @@ vcpkg install ffmpeg:x64-windows
 setx VCPKG_ROOT "C:\vcpkg"
 setx VCPKGRS_DYNAMIC "1"
 setx FFMPEG_DIR "C:\vcpkg\installed\x64-windows"
+setx PATH "%PATH%;C:\vcpkg\installed\x64-windows\bin"
 ```
 
 Then restart your terminal and run `cargo build`.
+
+For the current shell only (without `setx`):
+
+```powershell
+$env:VCPKG_ROOT = "C:\vcpkg"
+$env:VCPKGRS_DYNAMIC = "1"
+$env:FFMPEG_DIR = "C:\vcpkg\installed\x64-windows"
+$env:PATH = "C:\vcpkg\installed\x64-windows\bin;" + $env:PATH
+```
 
 The crate includes a Windows build helper (`build.rs`) that emits guidance when
 `FFMPEG_DIR` is missing and a vcpkg install is detected.
@@ -385,7 +434,7 @@ Enable additional functionality through Cargo features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.3.8", features = ["full"] }
+unbundle = { version = "5.0.0", features = ["full"] }
 ```
 
 #### Feature Usage Guide
@@ -437,21 +486,6 @@ Run an example:
 ```bash
 cargo run --example metadata -- path/to/video.mp4
 ```
-
-## CLI (MVP)
-
-This crate now ships a minimal CLI binary:
-
-```bash
-cargo run --bin unbundle-cli -- metadata input.mp4
-cargo run --bin unbundle-cli -- metadata https://example.com/video.mp4
-cargo run --bin unbundle-cli -- frame input.mp4 0 first.png
-cargo run --bin unbundle-cli -- frame-at input.mp4 2.5 at_2_5s.png
-cargo run --bin unbundle-cli -- audio input.mp4 wav output.wav
-cargo run --bin unbundle-cli -- subtitle input.mkv srt output.srt
-```
-
-The CLI is intentionally small and focused on common operations.
 
 ## Changelog
 

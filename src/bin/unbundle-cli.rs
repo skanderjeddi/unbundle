@@ -1,16 +1,84 @@
-use std::time::Duration;
+use std::{
+    fs,
+    path::PathBuf,
+    time::Duration,
+};
 
-use unbundle::{AudioFormat, MediaFile, SubtitleFormat};
+use clap::{Parser, Subcommand};
+use unbundle::{AudioFormat, FrameRange, MediaFile, SubtitleFormat};
 
-fn print_usage() {
-    println!("unbundle-cli (MVP)");
-    println!();
-    println!("Usage:");
-    println!("  unbundle-cli metadata <input>");
-    println!("  unbundle-cli frame <input> <frame_number> <output_image>");
-    println!("  unbundle-cli frame-at <input> <seconds> <output_image>");
-    println!("  unbundle-cli audio <input> <wav|mp3|flac|aac> <output_audio>");
-    println!("  unbundle-cli subtitle <input> <srt|vtt|raw> <output_subtitle>");
+#[derive(Debug, Parser)]
+#[command(
+    name = "unbundle-cli",
+    version,
+    about = "Extract frames, audio, subtitles, and metadata from media files"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Probe a media file and print a metadata summary.
+    Probe {
+        /// Input media path or URL.
+        input: String,
+    },
+    /// Extract frames to an output directory.
+    ExtractFrames {
+        /// Input media path or URL.
+        input: String,
+        /// Output directory for extracted frame images.
+        #[arg(long)]
+        out: PathBuf,
+        /// Extract every Nth frame.
+        #[arg(long, default_value_t = 30)]
+        every: u64,
+        /// Optional start frame (inclusive).
+        #[arg(long)]
+        start: Option<u64>,
+        /// Optional end frame (inclusive).
+        #[arg(long)]
+        end: Option<u64>,
+        /// Output image extension (png, jpg, jpeg, bmp, tiff).
+        #[arg(long, default_value = "png")]
+        ext: String,
+    },
+    /// Extract audio track to a file.
+    ExtractAudio {
+        /// Input media path or URL.
+        input: String,
+        /// Output format: wav | mp3 | flac | aac.
+        #[arg(long)]
+        format: String,
+        /// Output file path.
+        #[arg(long)]
+        out: PathBuf,
+        /// Optional start time in seconds.
+        #[arg(long)]
+        start: Option<f64>,
+        /// Optional end time in seconds.
+        #[arg(long)]
+        end: Option<f64>,
+    },
+    /// Extract subtitles to a file.
+    ExtractSubs {
+        /// Input media path or URL.
+        input: String,
+        /// Output format: srt | vtt | raw.
+        #[arg(long)]
+        format: String,
+        /// Output file path.
+        #[arg(long)]
+        out: PathBuf,
+        /// Optional start time in seconds.
+        #[arg(long)]
+        start: Option<f64>,
+        /// Optional end time in seconds.
+        #[arg(long)]
+        end: Option<f64>,
+    },
 }
 
 fn parse_audio_format(value: &str) -> Option<AudioFormat> {
@@ -32,6 +100,10 @@ fn parse_subtitle_format(value: &str) -> Option<SubtitleFormat> {
     }
 }
 
+fn parse_seconds(value: f64) -> Duration {
+    Duration::from_secs_f64(value.max(0.0))
+}
+
 fn open_input(input: &str) -> Result<MediaFile, Box<dyn std::error::Error>> {
     if input.contains("://") {
         Ok(MediaFile::open_url(input)?)
@@ -41,22 +113,17 @@ fn open_input(input: &str) -> Result<MediaFile, Box<dyn std::error::Error>> {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        print_usage();
-        return Ok(());
-    }
+    let cli = Cli::parse();
 
-    match args[1].as_str() {
-        "metadata" => {
-            if args.len() != 3 {
-                print_usage();
-                return Ok(());
-            }
-            let unbundler = open_input(&args[2])?;
+    match cli.command {
+        Commands::Probe { input } => {
+            let unbundler = open_input(&input)?;
             let metadata = unbundler.metadata();
             println!("Format: {}", metadata.format);
             println!("Duration: {:?}", metadata.duration);
+            if let Some(chapters) = &metadata.chapters {
+                println!("Chapters: {}", chapters.len());
+            }
             if let Some(video) = &metadata.video {
                 println!(
                     "Video: {}x{} @ {:.2} fps [{}]",
@@ -73,59 +140,105 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Subtitle: {}", subtitle.codec);
             }
         }
-        "frame" => {
-            if args.len() != 5 {
-                print_usage();
-                return Ok(());
+        Commands::ExtractFrames {
+            input,
+            out,
+            every,
+            start,
+            end,
+            ext,
+        } => {
+            if every == 0 {
+                return Err("--every must be greater than 0".into());
             }
-            let frame_number: u64 = args[3].parse()?;
-            let output = &args[4];
-            let mut unbundler = open_input(&args[2])?;
-            let image = unbundler.video().frame(frame_number)?;
-            image.save(output)?;
-            println!("Saved {}", output);
-        }
-        "audio" => {
-            if args.len() != 5 {
-                print_usage();
-                return Ok(());
+
+            fs::create_dir_all(&out)?;
+
+            let mut unbundler = open_input(&input)?;
+            let metadata = unbundler.metadata().video.clone().ok_or("No video stream")?;
+            let max_frame = metadata.frame_count.saturating_sub(1);
+            let start_frame = start.unwrap_or(0).min(max_frame);
+            let end_frame = end.unwrap_or(max_frame).min(max_frame);
+
+            if start_frame > end_frame {
+                return Err("--start must be <= --end".into());
             }
-            let format = parse_audio_format(&args[3]).ok_or("Unsupported audio format")?;
-            let output = &args[4];
-            let mut unbundler = open_input(&args[2])?;
-            unbundler.audio().save(output, format)?;
-            println!("Saved {}", output);
+
+            let frame_numbers: Vec<u64> = (start_frame..=end_frame).step_by(every as usize).collect();
+
+            let ext_clean = ext.trim_start_matches('.').to_ascii_lowercase();
+            let mut extracted = 0_u64;
+
+            unbundler.video().for_each_frame(
+                FrameRange::Specific(frame_numbers),
+                |frame_number, image| {
+                    let output_path = out.join(format!("frame_{frame_number:06}.{ext_clean}"));
+                    image.save(&output_path)?;
+                    extracted += 1;
+                    Ok(())
+                },
+            )?;
+
+            println!("Extracted {extracted} frame(s) to {}", out.display());
         }
-        "subtitle" => {
-            if args.len() != 5 {
-                print_usage();
-                return Ok(());
+        Commands::ExtractAudio {
+            input,
+            format,
+            out,
+            start,
+            end,
+        } => {
+            let audio_format = parse_audio_format(&format).ok_or("Unsupported --format for audio")?;
+            let mut unbundler = open_input(&input)?;
+
+            match (start, end) {
+                (Some(start_seconds), Some(end_seconds)) => {
+                    unbundler.audio().save_range(
+                        &out,
+                        parse_seconds(start_seconds),
+                        parse_seconds(end_seconds),
+                        audio_format,
+                    )?;
+                }
+                (None, None) => {
+                    unbundler.audio().save(&out, audio_format)?;
+                }
+                _ => {
+                    return Err("Provide both --start and --end, or neither".into());
+                }
             }
-            let format = parse_subtitle_format(&args[3]).ok_or("Unsupported subtitle format")?;
-            let output = &args[4];
-            let mut unbundler = open_input(&args[2])?;
-            unbundler.subtitle().save(output, format)?;
-            println!("Saved {}", output);
+
+            println!("Saved {}", out.display());
         }
-        "help" | "--help" | "-h" => {
-            print_usage();
-        }
-        "frame-at" => {
-            if args.len() != 5 {
-                print_usage();
-                return Ok(());
+        Commands::ExtractSubs {
+            input,
+            format,
+            out,
+            start,
+            end,
+        } => {
+            let subtitle_format =
+                parse_subtitle_format(&format).ok_or("Unsupported --format for subtitles")?;
+            let mut unbundler = open_input(&input)?;
+
+            match (start, end) {
+                (Some(start_seconds), Some(end_seconds)) => {
+                    unbundler.subtitle().save_range(
+                        &out,
+                        subtitle_format,
+                        parse_seconds(start_seconds),
+                        parse_seconds(end_seconds),
+                    )?;
+                }
+                (None, None) => {
+                    unbundler.subtitle().save(&out, subtitle_format)?;
+                }
+                _ => {
+                    return Err("Provide both --start and --end, or neither".into());
+                }
             }
-            let seconds: f64 = args[3].parse()?;
-            let output = &args[4];
-            let mut unbundler = open_input(&args[2])?;
-            let image = unbundler
-                .video()
-                .frame_at(Duration::from_secs_f64(seconds.max(0.0)))?;
-            image.save(output)?;
-            println!("Saved {}", output);
-        }
-        _ => {
-            print_usage();
+
+            println!("Saved {}", out.display());
         }
     }
 
