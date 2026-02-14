@@ -556,6 +556,28 @@ impl MediaFile {
         Self::open_source(url)
     }
 
+    /// Probe a media file and return metadata without retaining an open demuxer.
+    ///
+    /// This is a convenience wrapper around [`MediaProbe`](crate::MediaProbe)
+    /// for callers that prefer `MediaFile` as the primary entry point.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`MediaProbe::probe`](crate::MediaProbe::probe).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaFile, UnbundleError};
+    ///
+    /// let metadata = MediaFile::probe_only("input.mp4")?;
+    /// println!("Duration: {:?}", metadata.duration);
+    /// # Ok::<(), UnbundleError>(())
+    /// ```
+    pub fn probe_only<P: AsRef<Path>>(path: P) -> Result<MediaMetadata, UnbundleError> {
+        crate::probe::MediaProbe::probe(path)
+    }
+
     /// Get a reference to the cached media metadata.
     ///
     /// Metadata is extracted once during [`open`](MediaFile::open) and

@@ -97,6 +97,35 @@ pub struct FrameMetadata {
     pub frame_type: FrameType,
 }
 
+/// Zero-copy view over a decoded frame's primary plane and metadata.
+///
+/// Provided to [`VideoHandle::for_each_raw_frame`] callbacks. The `data`
+/// slice borrows decoder-owned memory and is only valid for the callback
+/// invocation.
+#[derive(Debug, Clone, Copy)]
+pub struct RawFrameView<'a> {
+    /// The zero-indexed frame number within the video.
+    pub frame_number: u64,
+    /// Presentation timestamp in stream time-base units, if available.
+    pub pts: Option<i64>,
+    /// Presentation timestamp converted to [`Duration`].
+    pub timestamp: Duration,
+    /// Decoded frame width.
+    pub width: u32,
+    /// Decoded frame height.
+    pub height: u32,
+    /// Line stride (bytes per row) for `data`.
+    pub stride: usize,
+    /// Pixel format of this decoded frame.
+    pub pixel_format: Pixel,
+    /// Whether this frame is a keyframe.
+    pub is_keyframe: bool,
+    /// Picture type (I/P/B/etc.).
+    pub frame_type: FrameType,
+    /// Borrowed bytes from plane 0. May include row padding.
+    pub data: &'a [u8],
+}
+
 /// Specifies which frames to extract from a video.
 ///
 /// Used with [`VideoHandle::frames`] to extract multiple frames in a single
@@ -127,6 +156,11 @@ pub enum FrameRange {
     TimeInterval(Duration),
     /// Extract frames at specific frame numbers.
     Specific(Vec<u64>),
+    /// Extract keyframes only.
+    ///
+    /// Keyframes are discovered from packet metadata (without full decode)
+    /// and converted to frame numbers using stream timestamps.
+    KeyframesOnly,
     /// Extract frames from multiple disjoint time segments.
     ///
     /// Each `(start, end)` pair defines a time range. Segments may be
@@ -1554,6 +1588,92 @@ impl<'a> VideoHandle<'a> {
         Ok(())
     }
 
+    /// Process decoded frames as zero-copy byte slices plus metadata.
+    ///
+    /// Unlike [`for_each_frame`](VideoHandle::for_each_frame), this avoids
+    /// conversion to [`DynamicImage`]. The callback receives a borrowed
+    /// [`RawFrameView`] valid for the duration of that callback call.
+    pub fn for_each_raw_frame<F>(
+        &mut self,
+        range: FrameRange,
+        callback: F,
+    ) -> Result<(), UnbundleError>
+    where
+        F: FnMut(RawFrameView<'_>) -> Result<(), UnbundleError>,
+    {
+        self.for_each_raw_frame_with_options(range, &ExtractOptions::default(), callback)
+    }
+
+    /// Process decoded frames as zero-copy byte slices plus metadata,
+    /// with progress/cancellation support.
+    pub fn for_each_raw_frame_with_options<F>(
+        &mut self,
+        range: FrameRange,
+        config: &ExtractOptions,
+        mut callback: F,
+    ) -> Result<(), UnbundleError>
+    where
+        F: FnMut(RawFrameView<'_>) -> Result<(), UnbundleError>,
+    {
+        let video_metadata = self
+            .unbundler
+            .metadata
+            .video
+            .as_ref()
+            .ok_or(UnbundleError::NoVideoStream)?
+            .clone();
+
+        let video_stream_index = self.resolve_video_stream_index()?;
+        let time_base = self
+            .unbundler
+            .input_context
+            .stream(video_stream_index)
+            .ok_or(UnbundleError::NoVideoStream)?
+            .time_base();
+
+        let total =
+            Self::estimate_frame_count(&range, &video_metadata, self.unbundler.metadata.duration);
+
+        let mut tracker = ProgressTracker::new(
+            config.progress.clone(),
+            OperationType::FrameExtraction,
+            total,
+            config.batch_size,
+        );
+
+        self.dispatch_range_raw(
+            range,
+            &video_metadata,
+            config,
+            &mut |frame_number, frame| {
+                let pts = frame.pts();
+                let timestamp = Duration::from_secs_f64(
+                    crate::conversion::pts_to_seconds(pts.unwrap_or(0), time_base).max(0.0),
+                );
+
+                let view = RawFrameView {
+                    frame_number,
+                    pts,
+                    timestamp,
+                    width: frame.width(),
+                    height: frame.height(),
+                    stride: frame.stride(0),
+                    pixel_format: frame.format(),
+                    is_keyframe: frame.is_key(),
+                    frame_type: picture_type_to_frame_type(frame.kind()),
+                    data: frame.data(0),
+                };
+
+                callback(view)?;
+                tracker.advance(Some(frame_number), Some(timestamp));
+                Ok(())
+            },
+        )?;
+
+        tracker.finish();
+        Ok(())
+    }
+
     /// Detect scene changes (shot boundaries) in the video.
     ///
     /// Uses FFmpeg's `scdet` filter to analyse every frame and return a list
@@ -1866,7 +1986,7 @@ impl<'a> VideoHandle<'a> {
     /// }
     /// # Ok::<(), UnbundleError>(())
     /// ```
-    pub fn frame_iter(self, range: FrameRange) -> Result<FrameIterator<'a>, UnbundleError> {
+    pub fn frame_iter(mut self, range: FrameRange) -> Result<FrameIterator<'a>, UnbundleError> {
         let video_metadata = self
             .unbundler
             .metadata
@@ -1895,7 +2015,7 @@ impl<'a> VideoHandle<'a> {
     ///
     /// Returns errors from [`frame_iter`](VideoHandle::frame_iter).
     pub fn frame_iter_with_options(
-        self,
+        mut self,
         range: FrameRange,
         output_config: FrameOutputOptions,
     ) -> Result<FrameIterator<'a>, UnbundleError> {
@@ -1921,7 +2041,7 @@ impl<'a> VideoHandle<'a> {
     /// Shared helper for [`frame_iter`](VideoHandle::frame_iter) and
     /// related methods.
     fn resolve_frame_numbers_for_iter(
-        &self,
+        &mut self,
         range: FrameRange,
         video_metadata: &VideoMetadata,
     ) -> Result<Vec<u64>, UnbundleError> {
@@ -1977,8 +2097,42 @@ impl<'a> VideoHandle<'a> {
                 nums
             }
             FrameRange::Specific(nums) => nums,
+            FrameRange::KeyframesOnly => self.resolve_keyframe_numbers(video_metadata)?,
             FrameRange::Segments(segments) => Self::resolve_segments(&segments, video_metadata)?,
         };
+        numbers.sort_unstable();
+        numbers.dedup();
+        Ok(numbers)
+    }
+
+    /// Resolve keyframes into sorted, deduplicated frame numbers.
+    fn resolve_keyframe_numbers(
+        &mut self,
+        video_metadata: &VideoMetadata,
+    ) -> Result<Vec<u64>, UnbundleError> {
+        let video_stream_index = self.resolve_video_stream_index()?;
+        let keyframes = crate::keyframe::analyze_group_of_pictures_impl(
+            self.unbundler,
+            video_stream_index,
+        )?
+        .keyframes;
+
+        let mut numbers: Vec<u64> = keyframes
+            .into_iter()
+            .filter_map(|keyframe| {
+                keyframe.timestamp.map(|timestamp| {
+                    crate::conversion::timestamp_to_frame_number(
+                        timestamp,
+                        video_metadata.frames_per_second,
+                    )
+                })
+            })
+            .collect();
+
+        if numbers.is_empty() {
+            numbers.push(0);
+        }
+
         numbers.sort_unstable();
         numbers.dedup();
         Ok(numbers)
@@ -2108,6 +2262,7 @@ impl<'a> VideoHandle<'a> {
                 Some((total_secs / interval_secs).ceil() as u64 + 1)
             }
             FrameRange::Specific(numbers) => Some(numbers.len() as u64),
+            FrameRange::KeyframesOnly => None,
             FrameRange::Segments(segments) => {
                 let frames_per_second = video_metadata.frames_per_second;
                 let total: u64 = segments
@@ -2191,6 +2346,10 @@ impl<'a> VideoHandle<'a> {
             FrameRange::Specific(numbers) => {
                 self.process_specific_frames(&numbers, video_metadata, config, handler)
             }
+            FrameRange::KeyframesOnly => {
+                let numbers = self.resolve_keyframe_numbers(video_metadata)?;
+                self.process_specific_frames(&numbers, video_metadata, config, handler)
+            }
             FrameRange::Segments(segments) => {
                 let numbers = Self::resolve_segments(&segments, video_metadata)?;
                 self.process_specific_frames(&numbers, video_metadata, config, handler)
@@ -2270,6 +2429,10 @@ impl<'a> VideoHandle<'a> {
             FrameRange::Specific(numbers) => {
                 self.process_specific_frames_and_metadata(&numbers, video_metadata, config, handler)
             }
+            FrameRange::KeyframesOnly => {
+                let numbers = self.resolve_keyframe_numbers(video_metadata)?;
+                self.process_specific_frames_and_metadata(&numbers, video_metadata, config, handler)
+            }
             FrameRange::Segments(segments) => {
                 let numbers = Self::resolve_segments(&segments, video_metadata)?;
                 self.process_specific_frames_and_metadata(&numbers, video_metadata, config, handler)
@@ -2340,6 +2503,10 @@ impl<'a> VideoHandle<'a> {
                 self.process_specific_frames_raw(&numbers, video_metadata, config, handler)
             }
             FrameRange::Specific(numbers) => {
+                self.process_specific_frames_raw(&numbers, video_metadata, config, handler)
+            }
+            FrameRange::KeyframesOnly => {
+                let numbers = self.resolve_keyframe_numbers(video_metadata)?;
                 self.process_specific_frames_raw(&numbers, video_metadata, config, handler)
             }
             FrameRange::Segments(segments) => {

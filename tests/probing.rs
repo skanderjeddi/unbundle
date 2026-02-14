@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use unbundle::{MediaProbe, UnbundleError};
+use unbundle::{MediaFile, MediaProbe, UnbundleError};
 
 fn sample_video_path() -> &'static str {
     "tests/fixtures/sample_video.mp4"
@@ -99,4 +99,19 @@ fn probe_many_all_valid() {
 
     let results = MediaProbe::probe_many(&[path1, path2]);
     assert!(results.iter().all(|r| r.is_ok()), "All should succeed");
+}
+
+#[test]
+fn media_file_probe_only_matches_media_probe() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        eprintln!("Skipping: fixture '{path}' not found.");
+        return;
+    }
+
+    let via_media_file = MediaFile::probe_only(path).expect("probe_only failed");
+    let via_probe = MediaProbe::probe(path).expect("MediaProbe::probe failed");
+
+    assert_eq!(via_media_file.format, via_probe.format);
+    assert_eq!(via_media_file.duration, via_probe.duration);
 }

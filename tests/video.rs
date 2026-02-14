@@ -168,6 +168,47 @@ fn extract_specific_frames() {
 }
 
 #[test]
+fn extract_keyframes_only() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
+    let frames = unbundler
+        .video()
+        .frames(FrameRange::KeyframesOnly)
+        .expect("Failed to extract keyframes");
+
+    assert!(!frames.is_empty(), "Expected at least one keyframe");
+}
+
+#[test]
+fn for_each_raw_frame_processes_all() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
+    let mut seen = 0_u64;
+
+    unbundler
+        .video()
+        .for_each_raw_frame(FrameRange::Range(0, 4), |view| {
+            seen += 1;
+            assert!(view.width > 0);
+            assert!(view.height > 0);
+            assert!(!view.data.is_empty());
+            assert!(view.stride > 0);
+            Ok(())
+        })
+        .expect("Failed to process raw frames");
+
+    assert!(seen > 0, "Expected at least one raw frame callback");
+}
+
+#[test]
 fn frame_out_of_range_returns_error() {
     let path = sample_video_path();
     if !Path::new(path).exists() {

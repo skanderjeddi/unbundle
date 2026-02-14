@@ -30,7 +30,7 @@ use ffmpeg_next::{
     subtitle::{Bitmap as SubtitleBitmap, Rect},
 };
 use ffmpeg_sys_next::{AVFormatContext, AVRational};
-use image::{DynamicImage, RgbaImage};
+use image::{DynamicImage, GenericImage, RgbaImage};
 
 use crate::configuration::ExtractOptions;
 use crate::error::UnbundleError;
@@ -499,6 +499,46 @@ impl<'a> SubtitleHandle<'a> {
 
         events.sort_by_key(|e| e.start_time);
         Ok(events)
+    }
+
+    /// Render active bitmap subtitle events at a timestamp into one image.
+    ///
+    /// This is intended for image-based subtitle codecs (for example PGS,
+    /// DVB, DVD subtitles). Text subtitle tracks return `Ok(None)` because
+    /// they have no bitmap payload.
+    ///
+    /// When multiple bitmap events overlap at `timestamp`, they are composited
+    /// in extraction order onto a transparent RGBA canvas.
+    pub fn render_at(&mut self, timestamp: Duration) -> Result<Option<DynamicImage>, UnbundleError> {
+        let active_events: Vec<BitmapSubtitleEvent> = self
+            .extract_bitmaps()?
+            .into_iter()
+            .filter(|event| event.start_time <= timestamp && timestamp < event.end_time)
+            .collect();
+
+        if active_events.is_empty() {
+            return Ok(None);
+        }
+
+        let canvas_width = active_events
+            .iter()
+            .map(|event| event.x.saturating_add(event.image.width()))
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let canvas_height = active_events
+            .iter()
+            .map(|event| event.y.saturating_add(event.image.height()))
+            .max()
+            .unwrap_or(1)
+            .max(1);
+
+        let mut canvas = DynamicImage::new_rgba8(canvas_width, canvas_height);
+        for event in &active_events {
+            let _ = canvas.copy_from(&event.image, event.x, event.y);
+        }
+
+        Ok(Some(canvas))
     }
 
     // ── Stream copy (lossless) ─────────────────────────────────────────
@@ -1000,6 +1040,13 @@ pub struct BitmapSubtitleEvent {
     pub image: DynamicImage,
     /// Zero-based index of this event.
     pub index: usize,
+}
+
+impl BitmapSubtitleEvent {
+    /// Return the decoded subtitle bitmap image.
+    pub fn as_image(&self) -> &DynamicImage {
+        &self.image
+    }
 }
 
 /// Decode a PAL8 bitmap subtitle rect into an RGBA [`DynamicImage`].
