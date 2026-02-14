@@ -17,6 +17,8 @@ CI is passing on Linux, macOS, and Windows (see the CI badge above).
 - **Changelog:** https://github.com/skanderjeddi/unbundle/releases
 - **Topics:** rust, ffmpeg, video, audio, subtitles, media-processing
 
+Keep this section in sync with the GitHub About panel (description, homepage, and topics).
+
 ```rust
 use unbundle::MediaFile;
 
