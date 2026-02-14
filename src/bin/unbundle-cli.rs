@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    path::PathBuf,
-    time::Duration,
-};
+use std::{fs, path::PathBuf, time::Duration};
 
 use clap::{Parser, Subcommand};
 use unbundle::{AudioFormat, FrameRange, MediaFile, SubtitleFormat};
@@ -155,7 +151,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             fs::create_dir_all(&out)?;
 
             let mut unbundler = open_input(&input)?;
-            let metadata = unbundler.metadata().video.clone().ok_or("No video stream")?;
+            let metadata = unbundler
+                .metadata()
+                .video
+                .clone()
+                .ok_or("No video stream")?;
             let max_frame = metadata.frame_count.saturating_sub(1);
             let start_frame = start.unwrap_or(0).min(max_frame);
             let end_frame = end.unwrap_or(max_frame).min(max_frame);
@@ -164,7 +164,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("--start must be <= --end".into());
             }
 
-            let frame_numbers: Vec<u64> = (start_frame..=end_frame).step_by(every as usize).collect();
+            let frame_numbers: Vec<u64> =
+                (start_frame..=end_frame).step_by(every as usize).collect();
 
             let ext_clean = ext.trim_start_matches('.').to_ascii_lowercase();
             let mut extracted = 0_u64;
@@ -188,7 +189,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             start,
             end,
         } => {
-            let audio_format = parse_audio_format(&format).ok_or("Unsupported --format for audio")?;
+            let audio_format =
+                parse_audio_format(&format).ok_or("Unsupported --format for audio")?;
             let mut unbundler = open_input(&input)?;
 
             match (start, end) {

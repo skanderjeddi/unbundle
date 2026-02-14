@@ -102,6 +102,11 @@
 //! | `rayon` | `frames_parallel()` distributes decoding across rayon threads |
 //! | `hardware` | Hardware-accelerated decoding (CUDA, VAAPI, DXVA2, D3D11VA, VideoToolbox, QSV) |
 //! | `scene` | Scene change detection via FFmpeg's `scdet` filter |
+//! | `gif` | Animated GIF export from video frames |
+//! | `waveform` | Audio waveform visualization data (min/max/RMS per bin) |
+//! | `loudness` | Peak/RMS loudness analysis with dBFS conversion |
+//! | `transcode` | Audio re-encoding between formats |
+//! | `encode` | Encode `DynamicImage` sequences into video files |
 //! | `full` | Enables all of the above |
 //!
 //! ## Requirements
