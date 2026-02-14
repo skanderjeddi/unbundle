@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [5.0.1] - 2026-02-14
+
+### Added
+- Added `unbundle-cli` MVP with focused commands:
+  - `probe`
+  - `extract-frames`
+  - `extract-audio`
+  - `extract-subs`
+- Added CLI hero visual to the README.
+
+### Improved
+- Refactored CLI UX to structured clap subcommands with clearer argument handling.
+- Upgraded README discoverability and onboarding with improved badges, CLI quick-start, and comparison table.
+- Clarified Windows FFmpeg + vcpkg runtime PATH guidance.
+
+### Docs
+- Removed maintainer-internal wording from the public README.
+
 ## [5.0.0] - 2026-02-14
 
 ### Added
@@ -148,7 +166,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 - Removed binary fixtures from git and updated ignore rules.
 
-[Unreleased]: https://github.com/skanderjeddi/unbundle/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/skanderjeddi/unbundle/compare/v5.0.1...HEAD
+[5.0.1]: https://github.com/skanderjeddi/unbundle/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/skanderjeddi/unbundle/compare/v4.3.8...v5.0.0
 [4.3.8]: https://github.com/skanderjeddi/unbundle/compare/v4.3.7...v4.3.8
 [4.3.7]: https://github.com/skanderjeddi/unbundle/compare/v4.3.6...v4.3.7

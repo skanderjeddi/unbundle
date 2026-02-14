@@ -106,14 +106,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "5.0.0"
+unbundle = "5.0.1"
 ```
 
 Or with additional features:
 
 ```toml
 [dependencies]
-unbundle = { version = "5.0.0", features = ["async", "rayon", "hardware"] }
+unbundle = { version = "5.0.1", features = ["async", "rayon", "hardware"] }
 ```
 
 ### System Requirements
@@ -432,7 +432,7 @@ Enable additional functionality through Cargo features:
 
 ```toml
 [dependencies]
-unbundle = { version = "5.0.0", features = ["full"] }
+unbundle = { version = "5.0.1", features = ["full"] }
 ```
 
 #### Feature Usage Guide
