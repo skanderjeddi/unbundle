@@ -9,6 +9,7 @@
 A clean, ergonomic Rust library for extracting video frames, audio tracks, and subtitles from media files using FFmpeg.
 
 CI is passing on Linux, macOS, and Windows (see the CI badge above).
+Contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Project metadata
 
