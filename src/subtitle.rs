@@ -509,7 +509,10 @@ impl<'a> SubtitleHandle<'a> {
     ///
     /// When multiple bitmap events overlap at `timestamp`, they are composited
     /// in extraction order onto a transparent RGBA canvas.
-    pub fn render_at(&mut self, timestamp: Duration) -> Result<Option<DynamicImage>, UnbundleError> {
+    pub fn render_at(
+        &mut self,
+        timestamp: Duration,
+    ) -> Result<Option<DynamicImage>, UnbundleError> {
         let active_events: Vec<BitmapSubtitleEvent> = self
             .extract_bitmaps()?
             .into_iter()

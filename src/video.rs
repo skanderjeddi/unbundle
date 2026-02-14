@@ -297,7 +297,8 @@ impl<'a> FilterChainHandle<'a> {
             .ok_or(UnbundleError::NoVideoStream)?
             .frames_per_second;
 
-        let frame_number = crate::conversion::timestamp_to_frame_number(timestamp, frames_per_second);
+        let frame_number =
+            crate::conversion::timestamp_to_frame_number(timestamp, frames_per_second);
         self.frame_with_options(frame_number, config)
     }
 
@@ -2052,11 +2053,9 @@ impl<'a> VideoHandle<'a> {
         video_metadata: &VideoMetadata,
     ) -> Result<Vec<u64>, UnbundleError> {
         let video_stream_index = self.resolve_video_stream_index()?;
-        let keyframes = crate::keyframe::analyze_group_of_pictures_impl(
-            self.unbundler,
-            video_stream_index,
-        )?
-        .keyframes;
+        let keyframes =
+            crate::keyframe::analyze_group_of_pictures_impl(self.unbundler, video_stream_index)?
+                .keyframes;
 
         let mut numbers: Vec<u64> = keyframes
             .into_iter()
@@ -2425,7 +2424,13 @@ impl<'a> VideoHandle<'a> {
                     end_time,
                     video_metadata.frames_per_second,
                 );
-                self.process_frame_range_raw(start_frame, end_frame, video_metadata, config, handler)
+                self.process_frame_range_raw(
+                    start_frame,
+                    end_frame,
+                    video_metadata,
+                    config,
+                    handler,
+                )
             }
             FrameRange::TimeInterval(interval) => {
                 if interval.is_zero() {
@@ -2784,7 +2789,8 @@ impl<'a> VideoHandle<'a> {
         let decoder_context = CodecContext::from_parameters(codec_parameters)?;
         let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
 
-        let seek_timestamp = crate::conversion::frame_number_to_seek_timestamp(start, frames_per_second);
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(start, frames_per_second);
         self.unbundler
             .input_context
             .seek(seek_timestamp, ..seek_timestamp)?;
@@ -2807,7 +2813,8 @@ impl<'a> VideoHandle<'a> {
                     crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
 
                 if current_frame_number >= start && current_frame_number <= end {
-                    let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     if let Some(raw_frame) = transferred.as_ref() {
                         handler(current_frame_number, raw_frame)?;
                     } else {
@@ -2880,10 +2887,8 @@ impl<'a> VideoHandle<'a> {
         let decoder_context = CodecContext::from_parameters(codec_parameters)?;
         let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
 
-        let seek_timestamp = crate::conversion::frame_number_to_seek_timestamp(
-            sorted_numbers[0],
-            frames_per_second,
-        );
+        let seek_timestamp =
+            crate::conversion::frame_number_to_seek_timestamp(sorted_numbers[0], frames_per_second);
         self.unbundler
             .input_context
             .seek(seek_timestamp, ..seek_timestamp)?;
@@ -2922,7 +2927,8 @@ impl<'a> VideoHandle<'a> {
                 if target_index < sorted_numbers.len()
                     && current_frame_number == sorted_numbers[target_index]
                 {
-                    let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     if let Some(raw_frame) = transferred.as_ref() {
                         handler(current_frame_number, raw_frame)?;
                     } else {
@@ -2956,7 +2962,8 @@ impl<'a> VideoHandle<'a> {
                 if target_index < sorted_numbers.len()
                     && current_frame_number == sorted_numbers[target_index]
                 {
-                    let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                    let transferred =
+                        maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
                     if let Some(raw_frame) = transferred.as_ref() {
                         handler(current_frame_number, raw_frame)?;
                     } else {

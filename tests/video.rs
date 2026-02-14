@@ -451,4 +451,3 @@ fn for_each_frame_matches_frames() {
         "for_each_frame and frames() should produce the same count",
     );
 }
-
