@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (example: v4.3.7)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: resolve_tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ -z "$TAG" ]]; then
+            echo "Failed to resolve tag"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: $TAG"
+
+      - name: Extract release notes from changelog
+        id: notes
+        shell: bash
+        run: |
+          TAG="${{ steps.resolve_tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { capture=1; next }
+            capture && $0 ~ "^## \\[" { exit }
+            capture { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+
+          if ! grep -q '[^[:space:]]' RELEASE_NOTES.md; then
+            echo "No changelog section found for $TAG"
+            exit 1
+          fi
+
+          echo "notes_file=RELEASE_NOTES.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="${{ steps.resolve_tag.outputs.tag }}"
+          NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
+          fi
+
+      - name: Mark latest when appropriate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="${{ steps.resolve_tag.outputs.tag }}"
+          LATEST_TAG=$(git tag --list 'v*' | sort -V | tail -n 1)
+
+          if [[ "$TAG" == "$LATEST_TAG" ]]; then
+            gh release edit "$TAG" --latest
+          fi
