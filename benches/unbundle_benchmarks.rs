@@ -20,14 +20,14 @@ use tokio::runtime::Runtime;
 #[cfg(feature = "async")]
 use tokio_stream::StreamExt;
 
-#[cfg(feature = "hardware")]
-use unbundle::HardwareAccelerationMode;
-#[cfg(feature = "scene")]
-use unbundle::{SceneDetectionMode, SceneDetectionOptions};
 #[cfg(feature = "waveform")]
 use criterion::Throughput;
+#[cfg(feature = "hardware")]
+use unbundle::HardwareAccelerationMode;
 #[cfg(feature = "waveform")]
 use unbundle::WaveformOptions;
+#[cfg(feature = "scene")]
+use unbundle::{SceneDetectionMode, SceneDetectionOptions};
 
 const FIXTURES_DIR: &str = "tests/fixtures";
 const SAMPLE_VIDEO: &str = "tests/fixtures/sample_video.mp4";
@@ -87,24 +87,32 @@ fn bench_video_single_frame(criterion: &mut Criterion) {
     group.sample_size(40);
 
     for frame_number in [0_u64, 10, 75, 120] {
-        group.bench_with_input(BenchmarkId::new("frame", frame_number), &frame_number, |bencher, &frame_number| {
-            bencher.iter(|| {
-                let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-                let _image = unbundler.video().frame(frame_number).unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("frame", frame_number),
+            &frame_number,
+            |bencher, &frame_number| {
+                bencher.iter(|| {
+                    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+                    let _image = unbundler.video().frame(frame_number).unwrap();
+                });
+            },
+        );
     }
 
     for seconds in [0_u64, 1, 3] {
-        group.bench_with_input(BenchmarkId::new("frame_at_secs", seconds), &seconds, |bencher, &seconds| {
-            bencher.iter(|| {
-                let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-                let _image = unbundler
-                    .video()
-                    .frame_at(Duration::from_secs(seconds))
-                    .unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("frame_at_secs", seconds),
+            &seconds,
+            |bencher, &seconds| {
+                bencher.iter(|| {
+                    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+                    let _image = unbundler
+                        .video()
+                        .frame_at(Duration::from_secs(seconds))
+                        .unwrap();
+                });
+            },
+        );
     }
 
     group.bench_function("frame_and_metadata", |bencher| {
@@ -154,7 +162,10 @@ fn bench_video_batch_modes(criterion: &mut Criterion) {
             let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _frames = unbundler
                 .video()
-                .frames(FrameRange::TimeRange(Duration::from_secs(1), Duration::from_secs(3)))
+                .frames(FrameRange::TimeRange(
+                    Duration::from_secs(1),
+                    Duration::from_secs(3),
+                ))
                 .unwrap();
         });
     });
@@ -235,23 +246,31 @@ fn bench_video_output_formats(criterion: &mut Criterion) {
     group.sample_size(40);
 
     for pixel_format in [PixelFormat::Rgb8, PixelFormat::Rgba8, PixelFormat::Gray8] {
-        group.bench_with_input(BenchmarkId::new("single_frame", format!("{pixel_format:?}")), &pixel_format, |bencher, &pixel_format| {
-            bencher.iter(|| {
-                let config = ExtractOptions::new().with_pixel_format(pixel_format);
-                let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-                let _image = unbundler.video().frame_with_options(30, &config).unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("single_frame", format!("{pixel_format:?}")),
+            &pixel_format,
+            |bencher, &pixel_format| {
+                bencher.iter(|| {
+                    let config = ExtractOptions::new().with_pixel_format(pixel_format);
+                    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+                    let _image = unbundler.video().frame_with_options(30, &config).unwrap();
+                });
+            },
+        );
     }
 
     for width in [160_u32, 320, 640] {
-        group.bench_with_input(BenchmarkId::new("scaled_width", width), &width, |bencher, &width| {
-            bencher.iter(|| {
-                let config = ExtractOptions::new().with_resolution(Some(width), None);
-                let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-                let _image = unbundler.video().frame_with_options(30, &config).unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("scaled_width", width),
+            &width,
+            |bencher, &width| {
+                bencher.iter(|| {
+                    let config = ExtractOptions::new().with_resolution(Some(width), None);
+                    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+                    let _image = unbundler.video().frame_with_options(30, &config).unwrap();
+                });
+            },
+        );
     }
 
     group.finish();
@@ -266,12 +285,16 @@ fn bench_audio_extract(criterion: &mut Criterion) {
     group.sample_size(30);
 
     for format in [AudioFormat::Wav, AudioFormat::Mp3, AudioFormat::Aac] {
-        group.bench_with_input(BenchmarkId::new("extract_full_memory", format!("{format}")), &format, |bencher, &format| {
-            bencher.iter(|| {
-                let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-                let _audio = unbundler.audio().extract(format).unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("extract_full_memory", format!("{format}")),
+            &format,
+            |bencher, &format| {
+                bencher.iter(|| {
+                    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+                    let _audio = unbundler.audio().extract(format).unwrap();
+                });
+            },
+        );
     }
 
     group.bench_function("extract_range_memory_wav", |bencher| {
@@ -412,7 +435,10 @@ fn bench_stream_copy_video_and_remux(criterion: &mut Criterion) {
         bencher.iter(|| {
             let tmp = NamedTempFile::new().unwrap();
             let output_path = tmp.path().with_extension("mp4");
-            Remuxer::new(SAMPLE_MKV, &output_path).unwrap().run().unwrap();
+            Remuxer::new(SAMPLE_MKV, &output_path)
+                .unwrap()
+                .run()
+                .unwrap();
             let _ = std::fs::remove_file(output_path);
         });
     });
@@ -590,7 +616,8 @@ fn bench_hardware_decode(criterion: &mut Criterion) {
 
     group.bench_function("auto", |bencher| {
         bencher.iter(|| {
-            let config = ExtractOptions::new().with_hardware_acceleration(HardwareAccelerationMode::Auto);
+            let config =
+                ExtractOptions::new().with_hardware_acceleration(HardwareAccelerationMode::Auto);
             let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
             let _image = unbundler.video().frame_with_options(30, &config).unwrap();
         });
@@ -639,13 +666,17 @@ fn bench_waveform(criterion: &mut Criterion) {
 
     for bins in [200_usize, 800, 2000] {
         group.throughput(Throughput::Elements(bins as u64));
-        group.bench_with_input(BenchmarkId::new("generate_waveform", bins), &bins, |bencher, &bins| {
-            bencher.iter(|| {
-                let config = WaveformOptions::new().bins(bins);
-                let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
-                let _data = unbundler.audio().generate_waveform(&config).unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("generate_waveform", bins),
+            &bins,
+            |bencher, &bins| {
+                bencher.iter(|| {
+                    let config = WaveformOptions::new().bins(bins);
+                    let mut unbundler = MediaFile::open(SAMPLE_VIDEO).unwrap();
+                    let _data = unbundler.audio().generate_waveform(&config).unwrap();
+                });
+            },
+        );
     }
 
     group.finish();
