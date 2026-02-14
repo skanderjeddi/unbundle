@@ -57,8 +57,6 @@ Contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Changelog:** https://github.com/skanderjeddi/unbundle/releases
 - **Topics:** rust, ffmpeg, video, audio, subtitles, media-processing
 
-Keep this section in sync with the GitHub About panel (description, homepage, and topics).
-
 ```rust
 use unbundle::MediaFile;
 
