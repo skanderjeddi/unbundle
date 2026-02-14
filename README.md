@@ -14,10 +14,10 @@ A clean, ergonomic Rust library for extracting video frames, audio tracks, and s
     <img src="docs/assets/unbundle-cli-hero.svg" alt="unbundle CLI demo" width="860" />
 </p>
 
-## New: `unbundle-cli` MVP
+## New: `unbundle` CLI
 
 <p align="center">
-    <img src="docs/assets/unbundle-cli-demo.gif" alt="Animated unbundle CLI demo" width="860" />
+    <img src="docs/assets/unbundle-cli-demo.gif" alt="Animated unbundle CLI demo" width="800" />
 </p>
 
 Install:
@@ -32,6 +32,9 @@ Commands:
 # Probe metadata
 unbundle metadata input.mp4
 
+# Alias for metadata
+unbundle info input.mp4
+
 # Extract frames
 unbundle extract-frames input.mp4 --out frames --every 10 --start 0 --end 300
 
@@ -43,7 +46,18 @@ unbundle extract-subs input.mkv --format srt --out subs.srt
 
 # Validate media structure
 unbundle validate input.mp4
+
+# Generate thumbnails
+unbundle thumbnail input.mp4 --out thumb.jpg --mode single --timestamp 00:00:10
+
+# Lossless remux
+unbundle remux input.mkv output.mp4
+
+# Generate shell completions
+unbundle completions zsh > _unbundle
 ```
+
+Optional feature-gated commands: `scene-detect`, `waveform`, and `loudness` (when built with corresponding crate features).
 
 ## Quick Comparison
 

@@ -1,7 +1,7 @@
-[0:v]fps=10,format=rgba,
+[0:v]fps=8,format=rgba,
 drawbox=x=24:y=24:w=752:h=402:color=0x101318@0.98:t=fill,
 drawbox=x=24:y=24:w=752:h=34:color=0x1f2430@1.0:t=fill,
-drawtext=fontfile='C\:/Windows/Fonts/consola.ttf':fontsize=18:fontcolor=0xd8dee9:text='unbundle demo':x=42:y=32,
+drawtext=fontfile='C\:/Windows/Fonts/consola.ttf':fontsize=18:fontcolor=0xd8dee9:text='unbundle CLI demo':x=42:y=32,
 drawtext=fontfile='C\:/Windows/Fonts/consola.ttf':fontsize=20:fontcolor=0x98c379:text='PS >':x=48:y=86,
 drawtext=fontfile='C\:/Windows/Fonts/consola.ttf':fontsize=20:fontcolor=0xe6edf3:text='unbundle metadata input.mp4 --json':x=114:y=86:enable='between(t,0.0,1.9)',
 drawtext=fontfile='C\:/Windows/Fonts/consola.ttf':fontsize=18:fontcolor=0x61afef:text='format mp4 duration 60s video h264':x=114:y=122:enable='between(t,0.5,1.9)',
@@ -14,5 +14,5 @@ drawtext=fontfile='C\:/Windows/Fonts/consola.ttf':fontsize=18:fontcolor=0x61afef
 drawtext=fontfile='C\:/Windows/Fonts/consola.ttf':fontsize=20:fontcolor=0x98c379:text='PS >':x=48:y=352:enable='between(t,6.0,7.8)',
 drawtext=fontfile='C\:/Windows/Fonts/consola.ttf':fontsize=20:fontcolor=0xe6edf3:text='unbundle completions zsh > _unbundle':x=114:y=352:enable='between(t,6.0,7.8)'[v];
 [v]split[p][q];
-[p]palettegen=max_colors=64[pal];
-[q][pal]paletteuse=dither=bayer:bayer_scale=3[out]
+[p]palettegen=stats_mode=full:max_colors=128[pal];
+[q][pal]paletteuse=dither=none[out]
