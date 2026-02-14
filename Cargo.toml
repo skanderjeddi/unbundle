@@ -90,7 +90,8 @@ name = "video_encoder"
 required-features = ["encode"]
 
 [[bench]]
-name = "extraction_benchmarks"
+name = "unbundle_benchmarks"
+path = "benches/unbundle_benchmarks.rs"
 harness = false
 
 [[bin]]

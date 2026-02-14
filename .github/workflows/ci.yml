@@ -48,6 +48,23 @@ jobs:
           .\vcpkg\bootstrap-vcpkg.bat
           .\vcpkg\vcpkg.exe install ffmpeg:x64-windows
 
+      - name: Configure FFmpeg runtime PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ffmpegBin = Join-Path $env:GITHUB_WORKSPACE "vcpkg\installed\x64-windows\bin"
+          $ffmpegTools = Join-Path $env:GITHUB_WORKSPACE "vcpkg\installed\x64-windows\tools\ffmpeg"
+
+          if (!(Test-Path $ffmpegBin)) {
+            throw "Expected FFmpeg DLL directory not found: $ffmpegBin"
+          }
+
+          $ffmpegBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          if (Test-Path $ffmpegTools) {
+            $ffmpegTools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
       - name: Rustfmt check
         if: runner.os == 'Linux'
         run: cargo fmt --all -- --check
