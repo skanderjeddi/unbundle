@@ -10,6 +10,13 @@ A clean, ergonomic Rust library for extracting video frames, audio tracks, and s
 
 CI is passing on Linux, macOS, and Windows (see the CI badge above).
 
+## Project metadata
+
+- **Homepage:** https://docs.rs/unbundle
+- **Repository:** https://github.com/skanderjeddi/unbundle
+- **Changelog:** https://github.com/skanderjeddi/unbundle/releases
+- **Topics:** rust, ffmpeg, video, audio, subtitles, media-processing
+
 ```rust
 use unbundle::MediaFile;
 
