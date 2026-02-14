@@ -16,26 +16,33 @@ A clean, ergonomic Rust library for extracting video frames, audio tracks, and s
 
 ## New: `unbundle-cli` MVP
 
+<p align="center">
+    <img src="docs/assets/unbundle-cli-demo.gif" alt="Animated unbundle CLI demo" width="860" />
+</p>
+
 Install:
 
 ```bash
-cargo install unbundle --bin unbundle-cli
+cargo install unbundle
 ```
 
 Commands:
 
 ```bash
 # Probe metadata
-unbundle-cli probe input.mp4
+unbundle metadata input.mp4
 
 # Extract frames
-unbundle-cli extract-frames input.mp4 --out frames --every 10 --start 0 --end 300
+unbundle extract-frames input.mp4 --out frames --every 10 --start 0 --end 300
 
 # Extract full audio
-unbundle-cli extract-audio input.mp4 --format mp3 --out audio.mp3
+unbundle extract-audio input.mp4 --format mp3 --out audio.mp3
 
 # Extract subtitle file
-unbundle-cli extract-subs input.mkv --format srt --out subs.srt
+unbundle extract-subs input.mkv --format srt --out subs.srt
+
+# Validate media structure
+unbundle validate input.mp4
 ```
 
 ## Quick Comparison
@@ -106,14 +113,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "5.0.1"
+unbundle = "5.1.0"
 ```
 
 Or with additional features:
 
 ```toml
 [dependencies]
-unbundle = { version = "5.0.1", features = ["async", "rayon", "hardware"] }
+unbundle = { version = "5.1.0", features = ["async", "rayon", "hardware"] }
 ```
 
 ### System Requirements
@@ -432,7 +439,7 @@ Enable additional functionality through Cargo features:
 
 ```toml
 [dependencies]
-unbundle = { version = "5.0.1", features = ["full"] }
+unbundle = { version = "5.1.0", features = ["full"] }
 ```
 
 #### Feature Usage Guide

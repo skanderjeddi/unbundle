@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [5.1.0] - 2026-02-14
+
+### Added
+- Added `validate` CLI command: `unbundle validate <input>`.
+- Added `metadata` alias: `unbundle info <input>`.
+- Added animated terminal CLI demo asset in `docs/assets/unbundle-cli-demo.gif`.
+
+### Improved
+- Updated CLI subcommand help headers with explicit one-line descriptions.
+- Switched README CLI install and examples to the default `unbundle` binary name.
+
 ## [5.0.1] - 2026-02-14
 
 ### Added
@@ -166,7 +177,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 - Removed binary fixtures from git and updated ignore rules.
 
-[Unreleased]: https://github.com/skanderjeddi/unbundle/compare/v5.0.1...HEAD
+[Unreleased]: https://github.com/skanderjeddi/unbundle/compare/v5.1.0...HEAD
+[5.1.0]: https://github.com/skanderjeddi/unbundle/compare/v5.0.1...v5.1.0
 [5.0.1]: https://github.com/skanderjeddi/unbundle/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/skanderjeddi/unbundle/compare/v4.3.8...v5.0.0
 [4.3.8]: https://github.com/skanderjeddi/unbundle/compare/v4.3.7...v4.3.8
