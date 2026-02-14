@@ -180,7 +180,7 @@ pub use transcode::Transcoder;
 pub use unbundle::MediaFile;
 pub use validation::ValidationReport;
 pub use variable_framerate::VariableFrameRateAnalysis;
-pub use video::{FrameMetadata, FrameRange, FrameType, VideoHandle};
+pub use video::{FilterChainHandle, FrameMetadata, FrameRange, FrameType, VideoHandle};
 pub use video_iterator::FrameIterator;
 #[cfg(feature = "waveform")]
 pub use waveform::{WaveformBin, WaveformData, WaveformOptions};

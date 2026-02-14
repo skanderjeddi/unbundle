@@ -29,6 +29,16 @@ pub enum UnbundleError {
         reason: String,
     },
 
+    /// The media source could not be opened.
+    #[error("Failed to open media source '{input_source}': {reason}")]
+    SourceOpen {
+        /// Source string that was passed to [`crate::MediaFile::open_url`] or
+        /// [`crate::MediaFile::open_source`].
+        input_source: String,
+        /// Underlying reason the open failed.
+        reason: String,
+    },
+
     /// The file does not contain a video stream.
     #[error("No video stream found in file")]
     NoVideoStream,

@@ -410,3 +410,27 @@ fn for_each_frame_matches_frames() {
         "for_each_frame and frames() should produce the same count",
     );
 }
+
+#[test]
+fn for_each_frame_raw_processes_all() {
+    let path = sample_video_path();
+    if !Path::new(path).exists() {
+        return;
+    }
+
+    let mut unbundler = MediaFile::open(path).expect("Failed to open test video");
+
+    let mut count = 0u64;
+    unbundler
+        .video()
+        .for_each_frame_raw(FrameRange::Range(0, 4), |frame_number, frame| {
+            assert!(frame.width() > 0);
+            assert!(frame.height() > 0);
+            assert!(frame_number <= 4);
+            count += 1;
+            Ok(())
+        })
+        .expect("Failed to process raw frames");
+
+    assert!(count > 0, "Expected at least one raw frame to be processed");
+}

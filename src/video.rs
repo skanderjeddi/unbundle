@@ -168,6 +168,128 @@ pub struct VideoHandle<'a> {
     pub(crate) cached: Option<CachedDecoderState>,
 }
 
+/// Chainable FFmpeg filter helper for [`VideoHandle`].
+///
+/// Build a filter graph incrementally with repeated
+/// [`filter`](FilterChainHandle::filter) calls, then extract frames.
+///
+/// # Example
+///
+/// ```no_run
+/// use unbundle::{MediaFile, UnbundleError};
+///
+/// let mut unbundler = MediaFile::open("input.mp4")?;
+/// let image = unbundler
+///     .video()
+///     .filter("scale=1280:720")
+///     .filter("eq=brightness=0.1")
+///     .frame(0)?;
+/// # Ok::<(), UnbundleError>(())
+/// ```
+pub struct FilterChainHandle<'a> {
+    video_handle: VideoHandle<'a>,
+    filters: Vec<String>,
+}
+
+impl<'a> FilterChainHandle<'a> {
+    fn new(video_handle: VideoHandle<'a>) -> Self {
+        Self {
+            video_handle,
+            filters: Vec::new(),
+        }
+    }
+
+    fn combined_filter_spec(&self) -> Option<String> {
+        if self.filters.is_empty() {
+            None
+        } else {
+            Some(self.filters.join(","))
+        }
+    }
+
+    /// Append a filter to the chain.
+    ///
+    /// Empty filters are ignored.
+    #[must_use]
+    pub fn filter(mut self, filter_spec: &str) -> Self {
+        let spec = filter_spec.trim();
+        if !spec.is_empty() {
+            self.filters.push(spec.to_string());
+        }
+        self
+    }
+
+    /// Extract a single frame using the chained filters.
+    pub fn frame(mut self, frame_number: u64) -> Result<DynamicImage, UnbundleError> {
+        self.frame_with_options(frame_number, &ExtractOptions::default())
+    }
+
+    /// Extract a single frame with options using the chained filters.
+    pub fn frame_with_options(
+        &mut self,
+        frame_number: u64,
+        config: &ExtractOptions,
+    ) -> Result<DynamicImage, UnbundleError> {
+        if let Some(filter_spec) = self.combined_filter_spec() {
+            self.video_handle
+                .frame_with_filter_with_options(frame_number, &filter_spec, config)
+        } else {
+            self.video_handle.frame_with_options(frame_number, config)
+        }
+    }
+
+    /// Extract a frame at a timestamp using the chained filters.
+    pub fn frame_at(mut self, timestamp: Duration) -> Result<DynamicImage, UnbundleError> {
+        self.frame_at_with_options(timestamp, &ExtractOptions::default())
+    }
+
+    /// Extract a frame at a timestamp with options using the chained filters.
+    pub fn frame_at_with_options(
+        &mut self,
+        timestamp: Duration,
+        config: &ExtractOptions,
+    ) -> Result<DynamicImage, UnbundleError> {
+        let duration = self.video_handle.unbundler.metadata.duration;
+        if timestamp > duration {
+            return Err(UnbundleError::InvalidTimestamp(timestamp));
+        }
+
+        let frames_per_second = self
+            .video_handle
+            .unbundler
+            .metadata
+            .video
+            .as_ref()
+            .ok_or(UnbundleError::NoVideoStream)?
+            .frames_per_second;
+
+        let frame_number = crate::conversion::timestamp_to_frame_number(timestamp, frames_per_second);
+        self.frame_with_options(frame_number, config)
+    }
+
+    /// Extract and save a frame using the chained filters.
+    pub fn save_frame<P: AsRef<Path>>(
+        &mut self,
+        frame_number: u64,
+        path: P,
+    ) -> Result<(), UnbundleError> {
+        let image = self.frame_with_options(frame_number, &ExtractOptions::default())?;
+        image.save(path)?;
+        Ok(())
+    }
+
+    /// Extract and save a frame at timestamp using the chained filters.
+    pub fn save_frame_at<P: AsRef<Path>>(
+        &mut self,
+        timestamp: Duration,
+        path: P,
+    ) -> Result<(), UnbundleError> {
+        let image = self.frame_at_with_options(timestamp, &ExtractOptions::default())?;
+        image.save(path)?;
+        Ok(())
+    }
+}
+
 /// Decoder and scaler state cached between consecutive single-frame
 /// extractions via [`VideoHandle::frame_with_options`].
 ///
@@ -195,6 +317,16 @@ impl<'a> VideoHandle<'a> {
         self.stream_index
             .or(self.unbundler.video_stream_index)
             .ok_or(UnbundleError::NoVideoStream)
+    }
+
+    /// Start a chainable FFmpeg filter pipeline.
+    ///
+    /// This is a convenience wrapper around
+    /// [`frame_with_filter`](VideoHandle::frame_with_filter) for incremental
+    /// filter construction.
+    #[must_use]
+    pub fn filter(self, filter_spec: &str) -> FilterChainHandle<'a> {
+        FilterChainHandle::new(self).filter(filter_spec)
     }
     /// Extract a single frame by frame number (0-indexed).
     ///
@@ -1363,6 +1495,65 @@ impl<'a> VideoHandle<'a> {
         Ok(())
     }
 
+    /// Process decoded frames without converting to [`DynamicImage`].
+    ///
+    /// This avoids image conversion overhead and lets callers feed frames to
+    /// custom pipelines (e.g. GPU upload, OpenCV interop) directly.
+    pub fn for_each_frame_raw<F>(
+        &mut self,
+        range: FrameRange,
+        callback: F,
+    ) -> Result<(), UnbundleError>
+    where
+        F: FnMut(u64, &VideoFrame) -> Result<(), UnbundleError>,
+    {
+        self.for_each_frame_raw_with_options(range, &ExtractOptions::default(), callback)
+    }
+
+    /// Process decoded frames without converting to images, with
+    /// progress/cancellation support.
+    pub fn for_each_frame_raw_with_options<F>(
+        &mut self,
+        range: FrameRange,
+        config: &ExtractOptions,
+        mut callback: F,
+    ) -> Result<(), UnbundleError>
+    where
+        F: FnMut(u64, &VideoFrame) -> Result<(), UnbundleError>,
+    {
+        let video_metadata = self
+            .unbundler
+            .metadata
+            .video
+            .as_ref()
+            .ok_or(UnbundleError::NoVideoStream)?
+            .clone();
+
+        let total =
+            Self::estimate_frame_count(&range, &video_metadata, self.unbundler.metadata.duration);
+
+        let mut tracker = ProgressTracker::new(
+            config.progress.clone(),
+            OperationType::FrameExtraction,
+            total,
+            config.batch_size,
+        );
+
+        self.dispatch_range_raw(
+            range,
+            &video_metadata,
+            config,
+            &mut |frame_number, frame| {
+                callback(frame_number, frame)?;
+                tracker.advance(Some(frame_number), None);
+                Ok(())
+            },
+        )?;
+
+        tracker.finish();
+        Ok(())
+    }
+
     /// Detect scene changes (shot boundaries) in the video.
     ///
     /// Uses FFmpeg's `scdet` filter to analyse every frame and return a list
@@ -2086,6 +2277,78 @@ impl<'a> VideoHandle<'a> {
         }
     }
 
+    /// Validate and dispatch a [`FrameRange`] for raw frame processing.
+    fn dispatch_range_raw<F>(
+        &mut self,
+        range: FrameRange,
+        video_metadata: &VideoMetadata,
+        config: &ExtractOptions,
+        handler: &mut F,
+    ) -> Result<(), UnbundleError>
+    where
+        F: FnMut(u64, &VideoFrame) -> Result<(), UnbundleError>,
+    {
+        match range {
+            FrameRange::Range(start, end) => {
+                if start > end {
+                    return Err(UnbundleError::InvalidRange {
+                        start: format!("frame {start}"),
+                        end: format!("frame {end}"),
+                    });
+                }
+                self.process_frame_range_raw(start, end, video_metadata, config, handler)
+            }
+            FrameRange::Interval(step) => {
+                if step == 0 {
+                    return Err(UnbundleError::InvalidInterval);
+                }
+                let total = video_metadata.frame_count;
+                let numbers: Vec<u64> = (0..total).step_by(step as usize).collect();
+                self.process_specific_frames_raw(&numbers, video_metadata, config, handler)
+            }
+            FrameRange::TimeRange(start_time, end_time) => {
+                if start_time >= end_time {
+                    return Err(UnbundleError::InvalidRange {
+                        start: format!("{start_time:?}"),
+                        end: format!("{end_time:?}"),
+                    });
+                }
+                let start_frame = crate::conversion::timestamp_to_frame_number(
+                    start_time,
+                    video_metadata.frames_per_second,
+                );
+                let end_frame = crate::conversion::timestamp_to_frame_number(
+                    end_time,
+                    video_metadata.frames_per_second,
+                );
+                self.process_frame_range_raw(start_frame, end_frame, video_metadata, config, handler)
+            }
+            FrameRange::TimeInterval(interval) => {
+                if interval.is_zero() {
+                    return Err(UnbundleError::InvalidInterval);
+                }
+                let total_duration = self.unbundler.metadata.duration;
+                let mut numbers = Vec::new();
+                let mut current = Duration::ZERO;
+                while current <= total_duration {
+                    numbers.push(crate::conversion::timestamp_to_frame_number(
+                        current,
+                        video_metadata.frames_per_second,
+                    ));
+                    current += interval;
+                }
+                self.process_specific_frames_raw(&numbers, video_metadata, config, handler)
+            }
+            FrameRange::Specific(numbers) => {
+                self.process_specific_frames_raw(&numbers, video_metadata, config, handler)
+            }
+            FrameRange::Segments(segments) => {
+                let numbers = Self::resolve_segments(&segments, video_metadata)?;
+                self.process_specific_frames_raw(&numbers, video_metadata, config, handler)
+            }
+        }
+    }
+
     /// Decode a contiguous range of frames, calling the handler with
     /// [`FrameMetadata`] for each.
     fn process_frame_range_with_info<F>(
@@ -2380,6 +2643,217 @@ impl<'a> VideoHandle<'a> {
                         &config.frame_output,
                     )?;
                     handler(current_frame_number, image, info)?;
+                    target_index += 1;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Decode a contiguous frame range and pass raw decoded frames.
+    fn process_frame_range_raw<F>(
+        &mut self,
+        start: u64,
+        end: u64,
+        video_metadata: &VideoMetadata,
+        config: &ExtractOptions,
+        handler: &mut F,
+    ) -> Result<(), UnbundleError>
+    where
+        F: FnMut(u64, &VideoFrame) -> Result<(), UnbundleError>,
+    {
+        let video_stream_index = self.resolve_video_stream_index()?;
+        let frames_per_second = video_metadata.frames_per_second;
+
+        let stream = self
+            .unbundler
+            .input_context
+            .stream(video_stream_index)
+            .ok_or(UnbundleError::NoVideoStream)?;
+        let time_base = stream.time_base();
+        let codec_parameters = stream.parameters();
+        let decoder_context = CodecContext::from_parameters(codec_parameters)?;
+        let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
+
+        let seek_timestamp = crate::conversion::frame_number_to_seek_timestamp(start, frames_per_second);
+        self.unbundler
+            .input_context
+            .seek(seek_timestamp, ..seek_timestamp)?;
+
+        let mut decoded_frame = VideoFrame::empty();
+
+        for (stream, packet) in self.unbundler.input_context.packets() {
+            if config.is_cancelled() {
+                return Err(UnbundleError::Cancelled);
+            }
+            if stream.index() != video_stream_index {
+                continue;
+            }
+
+            decoder.send_packet(&packet)?;
+
+            while decoder.receive_frame(&mut decoded_frame).is_ok() {
+                let pts = decoded_frame.pts().unwrap_or(0);
+                let current_frame_number =
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+
+                if current_frame_number >= start && current_frame_number <= end {
+                    let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                    if let Some(raw_frame) = transferred.as_ref() {
+                        handler(current_frame_number, raw_frame)?;
+                    } else {
+                        handler(current_frame_number, &decoded_frame)?;
+                    }
+                }
+
+                if current_frame_number > end {
+                    return Ok(());
+                }
+            }
+        }
+
+        decoder.send_eof()?;
+        while decoder.receive_frame(&mut decoded_frame).is_ok() {
+            if config.is_cancelled() {
+                return Err(UnbundleError::Cancelled);
+            }
+
+            let pts = decoded_frame.pts().unwrap_or(0);
+            let current_frame_number =
+                crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+
+            if current_frame_number >= start && current_frame_number <= end {
+                let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                if let Some(raw_frame) = transferred.as_ref() {
+                    handler(current_frame_number, raw_frame)?;
+                } else {
+                    handler(current_frame_number, &decoded_frame)?;
+                }
+            }
+
+            if current_frame_number > end {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Decode specific frames and pass raw decoded frames.
+    fn process_specific_frames_raw<F>(
+        &mut self,
+        frame_numbers: &[u64],
+        video_metadata: &VideoMetadata,
+        config: &ExtractOptions,
+        handler: &mut F,
+    ) -> Result<(), UnbundleError>
+    where
+        F: FnMut(u64, &VideoFrame) -> Result<(), UnbundleError>,
+    {
+        if frame_numbers.is_empty() {
+            return Ok(());
+        }
+
+        let video_stream_index = self.resolve_video_stream_index()?;
+        let frames_per_second = video_metadata.frames_per_second;
+
+        let mut sorted_numbers = frame_numbers.to_vec();
+        sorted_numbers.sort_unstable();
+        sorted_numbers.dedup();
+
+        let stream = self
+            .unbundler
+            .input_context
+            .stream(video_stream_index)
+            .ok_or(UnbundleError::NoVideoStream)?;
+        let time_base = stream.time_base();
+        let codec_parameters = stream.parameters();
+        let decoder_context = CodecContext::from_parameters(codec_parameters)?;
+        let (mut decoder, hardware_active) = create_video_decoder(decoder_context, config)?;
+
+        let seek_timestamp = crate::conversion::frame_number_to_seek_timestamp(
+            sorted_numbers[0],
+            frames_per_second,
+        );
+        self.unbundler
+            .input_context
+            .seek(seek_timestamp, ..seek_timestamp)?;
+
+        let mut target_index = 0;
+        let mut decoded_frame = VideoFrame::empty();
+
+        for (stream, packet) in self.unbundler.input_context.packets() {
+            if target_index >= sorted_numbers.len() {
+                break;
+            }
+            if config.is_cancelled() {
+                return Err(UnbundleError::Cancelled);
+            }
+            if stream.index() != video_stream_index {
+                continue;
+            }
+
+            decoder.send_packet(&packet)?;
+
+            while decoder.receive_frame(&mut decoded_frame).is_ok() {
+                if target_index >= sorted_numbers.len() {
+                    break;
+                }
+
+                let pts = decoded_frame.pts().unwrap_or(0);
+                let current_frame_number =
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+
+                while target_index < sorted_numbers.len()
+                    && sorted_numbers[target_index] < current_frame_number
+                {
+                    target_index += 1;
+                }
+
+                if target_index < sorted_numbers.len()
+                    && current_frame_number == sorted_numbers[target_index]
+                {
+                    let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                    if let Some(raw_frame) = transferred.as_ref() {
+                        handler(current_frame_number, raw_frame)?;
+                    } else {
+                        handler(current_frame_number, &decoded_frame)?;
+                    }
+                    target_index += 1;
+                }
+            }
+        }
+
+        if target_index < sorted_numbers.len() {
+            decoder.send_eof()?;
+            while decoder.receive_frame(&mut decoded_frame).is_ok() {
+                if target_index >= sorted_numbers.len() {
+                    break;
+                }
+                if config.is_cancelled() {
+                    return Err(UnbundleError::Cancelled);
+                }
+
+                let pts = decoded_frame.pts().unwrap_or(0);
+                let current_frame_number =
+                    crate::conversion::pts_to_frame_number(pts, time_base, frames_per_second);
+
+                while target_index < sorted_numbers.len()
+                    && sorted_numbers[target_index] < current_frame_number
+                {
+                    target_index += 1;
+                }
+
+                if target_index < sorted_numbers.len()
+                    && current_frame_number == sorted_numbers[target_index]
+                {
+                    let transferred = maybe_transfer_hardware_frame(&decoded_frame, hardware_active)?;
+                    if let Some(raw_frame) = transferred.as_ref() {
+                        handler(current_frame_number, raw_frame)?;
+                    } else {
+                        handler(current_frame_number, &decoded_frame)?;
+                    }
                     target_index += 1;
                 }
             }

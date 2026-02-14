@@ -32,6 +32,16 @@ fn open_invalid_file() {
 }
 
 #[test]
+fn open_invalid_url_returns_source_open() {
+    let result = MediaFile::open_url("this-scheme-does-not-exist://example");
+    assert!(result.is_err());
+    assert!(
+        matches!(result.unwrap_err(), UnbundleError::SourceOpen { .. }),
+        "Expected SourceOpen variant for URL-like sources",
+    );
+}
+
+#[test]
 fn frame_out_of_range() {
     let path = "tests/fixtures/sample_video.mp4";
     if !Path::new(path).exists() {

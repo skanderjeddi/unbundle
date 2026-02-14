@@ -153,10 +153,12 @@ use unbundle::MediaFile;
 
 let mut unbundler = MediaFile::open("input.mp4")?;
 
-// Resize + adjust contrast in one FFmpeg filter graph.
+// Chain multiple filters incrementally.
 let frame = unbundler
     .video()
-    .frame_with_filter(0, "scale=320:240,eq=contrast=1.1")?;
+    .filter("scale=320:240")
+    .filter("eq=contrast=1.1")
+    .frame(0)?;
 
 frame.save("filtered.png")?;
 ```
@@ -415,6 +417,7 @@ This crate now ships a minimal CLI binary:
 
 ```bash
 cargo run --bin unbundle-cli -- metadata input.mp4
+cargo run --bin unbundle-cli -- metadata https://example.com/video.mp4
 cargo run --bin unbundle-cli -- frame input.mp4 0 first.png
 cargo run --bin unbundle-cli -- frame-at input.mp4 2.5 at_2_5s.png
 cargo run --bin unbundle-cli -- audio input.mp4 wav output.wav

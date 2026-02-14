@@ -91,6 +91,20 @@ impl Debug for MediaFile {
 }
 
 impl MediaFile {
+    fn open_error(source: &str, source_path: &Path, reason: String) -> UnbundleError {
+        if source.contains("://") {
+            UnbundleError::SourceOpen {
+                input_source: source.to_string(),
+                reason,
+            }
+        } else {
+            UnbundleError::FileOpen {
+                path: source_path.to_path_buf(),
+                reason,
+            }
+        }
+    }
+
     /// Open a media input source for extraction.
     ///
     /// `source` may be a local path, URL, or any input string accepted by FFmpeg.
@@ -101,17 +115,17 @@ impl MediaFile {
         log::debug!("Opening media source: {source}");
 
         // Initialise ffmpeg (safe to call multiple times).
-        ffmpeg_next::init().map_err(|error| UnbundleError::FileOpen {
-            path: source_path.clone(),
-            reason: format!("FFmpeg initialisation failed: {error}"),
+        ffmpeg_next::init().map_err(|error| {
+            Self::open_error(
+                source,
+                &source_path,
+                format!("FFmpeg initialisation failed: {error}"),
+            )
         })?;
 
         // Open the media source.
-        let input_context =
-            ffmpeg_next::format::input(source).map_err(|error| UnbundleError::FileOpen {
-                path: source_path.clone(),
-                reason: error.to_string(),
-            })?;
+        let input_context = ffmpeg_next::format::input(source)
+            .map_err(|error| Self::open_error(source, &source_path, error.to_string()))?;
 
         // Locate best video and audio streams.
         let video_stream_index = input_context
@@ -527,14 +541,14 @@ impl MediaFile {
     ///
     /// # Errors
     ///
-    /// Returns [`UnbundleError::FileOpen`] when FFmpeg cannot open the URL.
+    /// Returns [`UnbundleError::SourceOpen`] when FFmpeg cannot open the URL.
     ///
     /// # Example
     ///
     /// ```no_run
     /// use unbundle::{MediaFile, UnbundleError};
     ///
-    /// let mut unbundler = MediaFile::open_url("file:///tmp/input.mp4")?;
+    /// let mut unbundler = MediaFile::open_url("https://example.com/input.mp4")?;
     /// let metadata = unbundler.metadata();
     /// # Ok::<(), UnbundleError>(())
     /// ```
