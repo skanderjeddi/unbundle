@@ -3,9 +3,12 @@
 [![Crates.io](https://img.shields.io/crates/v/unbundle)](https://crates.io/crates/unbundle)
 [![docs.rs](https://img.shields.io/docsrs/unbundle)](https://docs.rs/unbundle)
 [![CI](https://github.com/skanderjeddi/unbundle/actions/workflows/ci.yml/badge.svg)](https://github.com/skanderjeddi/unbundle/actions/workflows/ci.yml)
+[![Changelog](https://img.shields.io/badge/changelog-releases-blue)](https://github.com/skanderjeddi/unbundle/releases)
 [![License: MIT](https://img.shields.io/crates/l/unbundle)](LICENSE)
 
 A clean, ergonomic Rust library for extracting video frames, audio tracks, and subtitles from media files using FFmpeg.
+
+CI is passing on Linux, macOS, and Windows (see the CI badge above).
 
 ```rust
 use unbundle::MediaFile;
@@ -36,20 +39,34 @@ unbundler.audio().save("audio.wav", AudioFormat::Wav)?;
 - **Content indexing** — frame extraction for search, waveform visualization
 - **Transcoding pipelines** — lossless remuxing, audio re-encoding
 
+### Contact-sheet mini-guide
+
+```rust
+use unbundle::{MediaFile, ThumbnailHandle, ThumbnailOptions};
+
+let mut unbundler = MediaFile::open("input.mp4")?;
+let options = ThumbnailOptions::new(4, 3).with_thumbnail_width(320);
+
+let sheet = ThumbnailHandle::grid(&mut unbundler, &options)?;
+sheet.save("contact_sheet.png")?;
+```
+
+This creates a 4×3 contact sheet from evenly spaced frames across the video.
+
 ## Installation
 
 Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unbundle = "4.3.7"
+unbundle = "4.3.8"
 ```
 
 Or with additional features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.3.7", features = ["async", "rayon", "hardware"] }
+unbundle = { version = "4.3.8", features = ["async", "rayon", "hardware"] }
 ```
 
 ### System Requirements
@@ -358,7 +375,7 @@ Enable additional functionality through Cargo features:
 
 ```toml
 [dependencies]
-unbundle = { version = "4.3.7", features = ["full"] }
+unbundle = { version = "4.3.8", features = ["full"] }
 ```
 
 #### Feature Usage Guide
