@@ -4,7 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-Note: this changelog is reconstructed from git commit history. The repository currently has no git tags, so version boundaries are inferred from release/bump commit messages.
+## [4.3.8] - 2026-02-14
+
+### Added
+- Added chainable FFmpeg filter API via `video().filter(...).filter(...).frame(...)`.
+- Added raw frame callback APIs:
+  - `for_each_frame_raw`
+  - `for_each_frame_raw_with_options`
+- Added URL/source-specific open error variant: `UnbundleError::SourceOpen`.
+- Added integration coverage for chainable filters, raw frame callbacks, and URL-open errors.
+
+### Improved
+- Improved `open_url` and source-opening diagnostics by returning source-aware errors for URL-like inputs.
+- Updated docs and README examples for chainable filters and URL-based CLI usage.
 
 ## [4.3.7] - 2026-02-14
 
@@ -118,6 +130,7 @@ Note: this changelog is reconstructed from git commit history. The repository cu
 ### Changed
 - Removed binary fixtures from git and updated ignore rules.
 
+[4.3.8]: https://github.com/skanderjeddi/unbundle/compare/v4.3.7...v4.3.8
 [4.3.7]: https://github.com/skanderjeddi/unbundle/compare/v4.3.6...v4.3.7
 [4.3.6]: https://github.com/skanderjeddi/unbundle/compare/v4.3.5...v4.3.6
 [4.3.5]: https://github.com/skanderjeddi/unbundle/compare/v4.3.4...v4.3.5
