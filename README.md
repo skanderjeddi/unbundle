@@ -59,6 +59,27 @@ unbundle completions zsh > _unbundle
 
 Optional feature-gated commands: `scene-detect`, `waveform`, and `loudness` (when built with corresponding crate features).
 
+Global flags (available across commands):
+
+```bash
+--verbose                    # extra logging
+--progress                   # show progress updates / bar
+--overwrite                  # allow replacing existing outputs
+--log-level <level>          # quiet|panic|fatal|error|warning|info|verbose|debug|trace
+--pixel-format <format>      # rgb8|rgba8|gray8 (frame extraction)
+--threads <N>                # preferred worker thread count
+--hardware <mode>            # auto|software|cuda|vaapi|dxva2|d3d11va|videotoolbox|qsv
+```
+
+Example:
+
+```bash
+unbundle --progress --verbose --log-level info \
+    --pixel-format rgb8 extract-frames input.mp4 --out frames --every 12
+```
+
+`--hardware` is effective when built with the crate’s `hardware` feature.
+
 ## Quick Comparison
 
 | Tool | Best for | Level | Notes |
