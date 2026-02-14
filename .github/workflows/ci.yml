@@ -52,14 +52,24 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo fmt --all -- --check
 
-      - name: Build
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cargo build
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
           VCPKGRS_DYNAMIC: "1"
           FFMPEG_DIR: ${{ github.workspace }}/vcpkg/installed/x64-windows
         run: cargo build
 
-      - name: Test
+      - name: Test (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cargo test
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
           VCPKGRS_DYNAMIC: "1"
