@@ -1,0 +1,68 @@
+name: Changelog Guard
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  changelog-version-check:
+    name: Require changelog entry for version bumps
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version bump has changelog section
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "Fetching base commit ${BASE_SHA}"
+            git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          fi
+
+          extract_version() {
+            local file_path="$1"
+            awk '
+              BEGIN { in_package=0 }
+              /^\[package\]/ { in_package=1; next }
+              /^\[/ && in_package { in_package=0 }
+              in_package && $1 == "version" {
+                gsub(/"/, "", $3)
+                print $3
+                exit
+              }
+            ' "$file_path"
+          }
+
+          CURRENT_VERSION="$(extract_version Cargo.toml)"
+          git show "${BASE_SHA}:Cargo.toml" > /tmp/base-Cargo.toml
+          BASE_VERSION="$(extract_version /tmp/base-Cargo.toml)"
+
+          echo "Base version: ${BASE_VERSION}"
+          echo "Current version: ${CURRENT_VERSION}"
+
+          if [[ -z "${CURRENT_VERSION}" || -z "${BASE_VERSION}" ]]; then
+            echo "Could not determine crate version from Cargo.toml"
+            exit 1
+          fi
+
+          if [[ "${CURRENT_VERSION}" == "${BASE_VERSION}" ]]; then
+            echo "Version unchanged; changelog check not required."
+            exit 0
+          fi
+
+          if grep -q "^## \[${CURRENT_VERSION}\]" CHANGELOG.md; then
+            echo "Found CHANGELOG entry for ${CURRENT_VERSION}."
+          else
+            echo "Missing CHANGELOG section: ## [${CURRENT_VERSION}]"
+            echo "Add a section for the bumped version before merging."
+            exit 1
+          fi
