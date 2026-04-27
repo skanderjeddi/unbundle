@@ -177,7 +177,7 @@ pub use remux::Remuxer;
 #[cfg(feature = "scene")]
 pub use scene::{SceneChange, SceneDetectionMode, SceneDetectionOptions};
 #[cfg(feature = "async")]
-pub use stream::{AudioFuture, FrameStream};
+pub use stream::{AudioFuture, FrameStream, MetadataFuture};
 pub use subtitle::{BitmapSubtitleEvent, SubtitleEvent, SubtitleFormat, SubtitleHandle};
 pub use thumbnail::{ThumbnailHandle, ThumbnailOptions};
 #[cfg(feature = "transcode")]

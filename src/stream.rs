@@ -44,6 +44,7 @@ use tokio_stream::Stream;
 use crate::audio::AudioFormat;
 use crate::configuration::ExtractOptions;
 use crate::error::UnbundleError;
+use crate::metadata::MediaMetadata;
 use crate::unbundle::MediaFile;
 use crate::video::FrameRange;
 
@@ -209,4 +210,47 @@ pub(crate) fn create_audio_future(
     });
 
     AudioFuture { handle }
+}
+
+/// A future that resolves to media metadata.
+///
+/// Created via [`MediaProbe::probe_async`](crate::MediaProbe::probe_async)
+/// for asynchronously extracting metadata without blocking the async runtime.
+///
+/// # Example
+///
+/// ```no_run
+/// use unbundle::{MediaProbe, UnbundleError};
+///
+/// # async fn example() -> Result<(), UnbundleError> {
+/// let metadata = MediaProbe::probe_async("input.mp4").await?;
+/// println!("Duration: {:?}", metadata.duration);
+/// println!("Format: {}", metadata.format);
+/// # Ok(())
+/// # }
+/// ```
+pub struct MetadataFuture {
+    pub(crate) handle: JoinHandle<Result<MediaMetadata, UnbundleError>>,
+}
+
+impl Future for MetadataFuture {
+    type Output = Result<MediaMetadata, UnbundleError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.handle)
+            .poll(cx)
+            .map(|result| result.unwrap_or_else(|_| Err(UnbundleError::Cancelled)))
+    }
+}
+
+/// Create a [`MetadataFuture`] that probes metadata on a blocking thread.
+///
+/// Opens a fresh demuxer for `source`, extracts metadata, and returns it.
+pub(crate) fn create_metadata_future(source: String) -> MetadataFuture {
+    let handle = tokio::task::spawn_blocking(move || {
+        let unbundler = MediaFile::open_source(&source)?;
+        Ok(unbundler.metadata.clone())
+    });
+
+    MetadataFuture { handle }
 }

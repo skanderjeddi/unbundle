@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [5.2.0] - 2026-04-27
+
+### Added
+- Added async metadata probing via `MediaProbe::probe_async()` (requires `async` feature).
+- Added `MetadataFuture` for async metadata extraction on a blocking thread pool.
+
 ## [5.1.0] - 2026-02-14
 
 ### Added

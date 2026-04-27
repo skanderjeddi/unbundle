@@ -14,6 +14,9 @@ use crate::error::UnbundleError;
 use crate::metadata::MediaMetadata;
 use crate::unbundle::MediaFile;
 
+#[cfg(feature = "async")]
+use crate::stream::MetadataFuture;
+
 /// Lightweight media file probe.
 ///
 /// Opens the file, extracts metadata, and immediately closes the demuxer.
@@ -82,5 +85,39 @@ impl MediaProbe {
     /// ```
     pub fn probe_many<P: AsRef<Path>>(paths: &[P]) -> Vec<Result<MediaMetadata, UnbundleError>> {
         paths.iter().map(|path| Self::probe(path)).collect()
+    }
+
+    /// Probe a media file asynchronously and return its metadata.
+    ///
+    /// Like [`probe`](MediaProbe::probe), but runs on a blocking thread pool
+    /// so it doesn't block the async runtime. The actual probing work is
+    /// identical; only the execution context differs.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`probe`](MediaProbe::probe), wrapped in
+    /// the future's result.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use unbundle::{MediaProbe, UnbundleError};
+    ///
+    /// # async fn example() -> Result<(), UnbundleError> {
+    /// let metadata = MediaProbe::probe_async("input.mp4").await?;
+    /// println!("Duration: {:?}", metadata.duration);
+    /// println!("Format: {}", metadata.format);
+    /// if let Some(video) = &metadata.video {
+    ///     println!("Video: {}x{} @ {} fps", video.width, video.height,
+    ///         video.frames_per_second);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "async")]
+    pub fn probe_async<P: AsRef<Path>>(path: P) -> MetadataFuture {
+        let source = path.as_ref().to_string_lossy().to_string();
+        log::debug!("Async probing media file: {}", path.as_ref().display());
+        crate::stream::create_metadata_future(source)
     }
 }
